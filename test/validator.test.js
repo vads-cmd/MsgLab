@@ -192,3 +192,61 @@ test('an ORM may have several orders but only one PID', () => {
   assert.deepStrictEqual(rules(validate(orm.join('\n'))), []);
   assert.ok(rules(validate([...orm, 'PID|2||9^^^MAIN^MR||X^Y'].join('\n'))).includes('TOO_MANY_SEGMENTS:PID'));
 });
+
+/* ---- merge and allergy events ---- */
+
+const MERGE = [
+  'MSH|^~\\&|HIS|MAIN|EHR|MAIN|20261023120000||ADT^A40^ADT_A39|MSG1|T|2.5.1',
+  'EVN|A40|20261023120000',
+  'PID|1||123^^^MAIN^MR||DOE^JOHN',
+  'MRG|OLD1^^^MAIN^MR||||||ROE^RICHARD',
+  'PV1|1|I',
+];
+const ALLERGY = [
+  'MSH|^~\\&|HIS|MAIN|EHR|MAIN|20261023120000||ADT^A60^ADT_A60|MSG1|T|2.5.1',
+  'EVN|A60|20261023120000',
+  'PID|1||123^^^MAIN^MR||DOE^JOHN',
+  'PV1|1|I',
+  'IAM|1|DA^Drug allergy^HL70127|PCN^Penicillin^L|SV^Severe^HL70128|Rash|A',
+];
+
+test('correct merge and allergy messages have no issues', () => {
+  assert.deepStrictEqual(validate(MERGE.join('\n')).issues, []);
+  assert.deepStrictEqual(validate(ALLERGY.join('\n')).issues, []);
+});
+
+test('MRG is required in a merge, IAM-3 and IAM-6 in an allergy segment', () => {
+  const noMrg = validate(MERGE.filter((l) => !l.startsWith('MRG')).join('\n'));
+  assert.ok(noMrg.issues.some((i) => i.rule === 'MISSING_SEGMENT' && i.message.includes('MRG')));
+  const emptyMrg = validate(MERGE.map((l) => (l.startsWith('MRG') ? 'MRG|' : l)).join('\n'));
+  assert.ok(emptyMrg.issues.some((i) => i.rule === 'REQUIRED_FIELD' && i.path === 'MRG-1'));
+  const emptyIam = validate(ALLERGY.map((l) => (l.startsWith('IAM') ? 'IAM|1|||||' : l)).join('\n'));
+  const paths = emptyIam.issues.filter((i) => i.rule === 'REQUIRED_FIELD').map((i) => i.path);
+  assert.deepStrictEqual(paths, ['IAM-3', 'IAM-6']);
+});
+
+test('ADT^A18 is reported as withdrawn from HL7 2.4, ADT^A60 as not existing before it', () => {
+  const a18 = (version) => MERGE.map((l) => l.replace('ADT^A40^ADT_A39', 'ADT^A18^ADT_A18').replace('|2.5.1', `|${version}`)).join('\n');
+  const rulesOf = (text) => validate(text).issues.map((i) => i.rule);
+  assert.deepStrictEqual(rulesOf(a18('2.3.1')), []);
+  assert.deepStrictEqual(rulesOf(a18('2.4')), ['EVENT_RETIRED']);
+  assert.deepStrictEqual(rulesOf(a18('2.5.1')), ['EVENT_RETIRED']);
+  const a60 = (version) => ALLERGY.map((l) => l.replace('|2.5.1', `|${version}`)).join('\n');
+  assert.deepStrictEqual(rulesOf(a60('2.3')), ['EVENT_NOT_IN_VERSION']);
+  assert.deepStrictEqual(rulesOf(a60('2.3.1')), ['EVENT_NOT_IN_VERSION']);
+  assert.deepStrictEqual(rulesOf(a60('2.4')), []);
+  assert.strictEqual(validate(a60('2.3')).valid, true);
+});
+
+test('an order with neither a placer nor a filler order number is reported', () => {
+  const order = [
+    'MSH|^~\\&|HIS|MAIN|EHR|MAIN|20261023120000||ORM^O01^ORM_O01|MSG1|T|2.5.1',
+    'PID|1||123^^^MAIN^MR||DOE^JOHN',
+    'ORC|NW|P1^HIS',
+    'OBR|1|P1^HIS||24323-8^CMP^LN',
+  ];
+  assert.deepStrictEqual(validate(order.join('\n')).issues, []);
+  const r = validate(order.map((l) => (l.startsWith('ORC') ? 'ORC|NW' : l)).join('\n'));
+  assert.deepStrictEqual(r.issues.map((i) => i.rule), ['ORDER_NUMBER']);
+  assert.strictEqual(r.valid, true);
+});

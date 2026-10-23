@@ -82,6 +82,30 @@ function renderValidation(result) {
 
 /* ---- explain tab ---- */
 
+function renderChips(field) {
+  const comps = el('div', 'f-comps');
+  for (const rep of field.reps) {
+    for (const c of rep.components) {
+      const chip = el('span', 'chip');
+      chip.append(el('span', 'chip-name', c.name || `#${c.n}`));
+      chip.append(document.createTextNode(c.decoded ? ` ${c.value} (${c.decoded})` : ` ${c.value}`));
+      comps.append(chip);
+    }
+  }
+  return comps;
+}
+
+function renderFieldRow(field) {
+  const row = el('tr');
+  row.append(el('td', 'f-path', field.path), el('td', 'f-name', field.name));
+
+  const value = el('td', 'f-value');
+  value.append(el('div', 'f-display', field.display));
+  if (field.reps.some((rep) => rep.components.length > 1)) value.append(renderChips(field));
+  row.append(value, el('td', 'f-type', field.dt));
+  return row;
+}
+
 function renderSegment(seg) {
   const details = el('details', 'segment');
   details.open = true;
@@ -95,27 +119,7 @@ function renderSegment(seg) {
   }
 
   const table = el('table', 'fields');
-  for (const field of seg.fields) {
-    const row = el('tr');
-    row.append(el('td', 'f-path', field.path), el('td', 'f-name', field.name));
-
-    const value = el('td', 'f-value');
-    value.append(el('div', 'f-display', field.display));
-    if (field.reps.some((rep) => rep.components.length > 1)) {
-      const comps = el('div', 'f-comps');
-      for (const rep of field.reps) {
-        for (const c of rep.components) {
-          const chip = el('span', 'chip');
-          chip.append(el('span', 'chip-name', c.name || `#${c.n}`));
-          chip.append(document.createTextNode(c.decoded ? ` ${c.value} (${c.decoded})` : ` ${c.value}`));
-          comps.append(chip);
-        }
-      }
-      value.append(comps);
-    }
-    row.append(value, el('td', 'f-type', field.dt));
-    table.append(row);
-  }
+  for (const field of seg.fields) table.append(renderFieldRow(field));
   details.append(table);
   return details;
 }
@@ -172,14 +176,19 @@ selectTab('validation');
 
 const generatorForm = document.getElementById('generator');
 const genStatus = document.getElementById('gen-status');
+const restoreButton = document.getElementById('gen-restore');
+let replacedText = null; // the message an ACK replaced, so it can be brought back
 const fieldValue = (id) => document.getElementById(id).value;
 
 async function generateMessage() {
   genStatus.classList.remove('error');
   genStatus.textContent = '';
+  const type = fieldValue('gen-type');
+  const previous = input.value;
   try {
     const result = await window.hl7.generate({
-      type: fieldValue('gen-type'),
+      type,
+      source: type === 'ACK' ? previous : '',
       version: fieldValue('gen-version'),
       sendingApp: fieldValue('gen-send-app'),
       sendingFacility: fieldValue('gen-send-fac'),
@@ -190,25 +199,145 @@ async function generateMessage() {
       fields: collectManual(),
     });
     if (!result.ok) throw new Error(result.error);
+    replacedText = type === 'ACK' ? previous : null;
+    restoreButton.hidden = replacedText === null;
     input.value = result.text;
     input.scrollTop = 0;
-    genStatus.textContent = `Generated ${result.type} (v${result.version}) · seed ${result.seed}${result.manual.length ? ` · ${plural(result.manual.length, 'manual value')}` : ''}`;
+    const manualNote = result.manual.length ? ` · ${plural(result.manual.length, 'manual value')}` : '';
+    genStatus.textContent = `Generated ${result.type} (v${result.version}) · seed ${result.seed}${manualNote}`;
     clearTimeout(timer);
-    run();
+    run().catch(console.error);
   } catch (err) {
     genStatus.classList.add('error');
     genStatus.textContent = err.message;
   }
 }
 
+restoreButton.addEventListener('click', () => {
+  if (replacedText === null) return;
+  input.value = replacedText;
+  replacedText = null;
+  restoreButton.hidden = true;
+  genStatus.textContent = 'Original message restored';
+  clearTimeout(timer);
+  run().catch(console.error);
+});
+
 generatorForm.addEventListener('submit', (event) => {
   event.preventDefault();
-  generateMessage();
+  generateMessage().catch(console.error);
 });
+
+/* ---- bulk generation ---- */
+
+const bulkForm = document.getElementById('bulk-form');
+const bulkStatus = document.getElementById('bulk-status');
+const bulkResult = document.getElementById('bulk-result');
+const SHOWN_ROWS = 200; // the table lists the first rows only; "Copy all" always copies everything
+let bulkMessages = [];
+
+function buildBulkTypes() {
+  const box = document.getElementById('bulk-types');
+  for (const option of document.getElementById('gen-type').options) {
+    if (option.value === 'ACK') continue; // an ACK answers one given message
+    const label = el('label');
+    const check = el('input');
+    check.type = 'checkbox';
+    check.value = option.value;
+    check.checked = option.value === 'ADT^A01';
+    label.append(check, document.createTextNode(` ${option.value}`));
+    box.append(label);
+  }
+}
+
+function showBulkResult(result) {
+  bulkMessages = result.messages;
+  document.getElementById('bulk-summary').textContent = `${plural(result.count, 'message')} for ${plural(result.patients, 'patient')} · seed ${result.seed}`;
+  document.getElementById('bulk-copy-status').textContent = '';
+  const rows = [];
+  bulkMessages.slice(0, SHOWN_ROWS).forEach((message, index) => {
+    const row = el('tr');
+    const open = el('button', '', 'Show');
+    open.type = 'button';
+    open.addEventListener('click', () => {
+      input.value = message.text;
+      input.scrollTop = 0;
+      replacedText = null;
+      restoreButton.hidden = true;
+      clearTimeout(timer);
+      run().catch(console.error);
+    });
+    const action = el('td');
+    action.append(open);
+    row.append(el('td', '', String(index + 1)), el('td', '', message.type), el('td', '', message.patient), el('td', '', message.time), el('td', '', message.controlId), action);
+    rows.push(row);
+  });
+  if (bulkMessages.length > SHOWN_ROWS) {
+    const more = el('tr');
+    more.append(el('td', '', `... and ${bulkMessages.length - SHOWN_ROWS} more (all are included when you copy)`));
+    more.firstChild.colSpan = 6;
+    rows.push(more);
+  }
+  document.getElementById('bulk-rows').replaceChildren(...rows);
+  bulkResult.hidden = false;
+}
+
+async function generateBulkMessages() {
+  bulkStatus.classList.remove('error');
+  bulkStatus.textContent = 'Generating...';
+  const button = document.getElementById('bulk-generate');
+  button.disabled = true;
+  try {
+    const types = Array.from(document.querySelectorAll('#bulk-types input:checked'), (box) => box.value);
+    const result = await window.hl7.generateBulk({
+      count: fieldValue('bulk-count'),
+      minutesBetween: fieldValue('bulk-minutes'),
+      mode: fieldValue('bulk-mode'),
+      types,
+      version: fieldValue('gen-version'),
+      sendingApp: fieldValue('gen-send-app'),
+      sendingFacility: fieldValue('gen-send-fac'),
+      receivingApp: fieldValue('gen-recv-app'),
+      receivingFacility: fieldValue('gen-recv-fac'),
+      processingId: fieldValue('gen-processing'),
+      seed: fieldValue('gen-seed'),
+    });
+    if (!result.ok) throw new Error(result.error);
+    showBulkResult(result);
+    bulkStatus.textContent = 'Done';
+  } catch (err) {
+    bulkStatus.classList.add('error');
+    bulkStatus.textContent = err.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+bulkForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  generateBulkMessages().catch(console.error);
+});
+
+document.getElementById('bulk-copy').addEventListener('click', async () => {
+  const status = document.getElementById('bulk-copy-status');
+  try {
+    await navigator.clipboard.writeText(bulkMessages.map((message) => message.text).join('\n'));
+    status.textContent = `Copied ${plural(bulkMessages.length, 'message')}`;
+  } catch (err) {
+    status.textContent = `Could not copy: ${err.message}`;
+  }
+});
+
+buildBulkTypes();
 
 /* ---- manual values ---- */
 
 // [key, label, events it applies to (all when left out)]
+const MERGE_TYPES = ['ADT^A18', 'ADT^A40'];
+const ORDER_TYPES = ['ORM^O01', 'ORU^R01'];
+const RESULT_TYPES = ['ORU^R01'];
+const ACK_TYPES = ['ACK'];
+
 const MANUAL_GROUPS = [
   ['Patient', [
     ['familyName', 'Last name'], ['givenName', 'First name'], ['middleInitial', 'Middle initial'], ['birthDate', 'Birth date (YYYYMMDD)'],
@@ -225,11 +354,22 @@ const MANUAL_GROUPS = [
   ['This message type only', [
     ['priorUnit', 'Previous unit (A02)', ['ADT^A02']], ['priorRoom', 'Previous room (A02)', ['ADT^A02']], ['priorBed', 'Previous bed (A02)', ['ADT^A02']],
     ['dischargeTime', 'Discharge time (A03)', ['ADT^A03']], ['dischargeDisposition', 'Discharge disposition (A03)', ['ADT^A03']],
+    ['priorPatientId', 'Merged-away patient ID (MRG-1)', MERGE_TYPES], ['priorFamilyName', 'Merged-away last name (MRG-7)', MERGE_TYPES],
+    ['priorGivenName', 'Merged-away first name (MRG-7)', MERGE_TYPES],
+    ['allergen', 'Allergen (code or text)', ['ADT^A60']], ['allergyType', 'Allergen type (code)', ['ADT^A60']],
+    ['allergySeverity', 'Allergy severity (code)', ['ADT^A60']],
+    ['orderControl', 'Order control (ORC-1, e.g. NW)', ORDER_TYPES], ['placerOrderNumber', 'Placer order number', ORDER_TYPES],
+    ['fillerOrderNumber', 'Filler order number', ORDER_TYPES], ['serviceCode', 'Test code (OBR-4)', ORDER_TYPES],
+    ['serviceName', 'Test name (OBR-4)', ORDER_TYPES], ['orderTime', 'Order time (YYYYMMDDHHMMSS)', ORDER_TYPES],
+    ['orderReason', 'Reason for study (OBR-31)', ['ORM^O01']],
+    ['resultStatus', 'Result status (OBR-25, OBX-11, e.g. F)', RESULT_TYPES], ['resultValue', 'Value of the first result (OBX-5)', RESULT_TYPES],
+    ['ackCode', 'Acknowledgment code (MSA-1: AA, AE, AR, CA, CE, CR)', ACK_TYPES], ['errorCode', 'Error code (ERR, e.g. 207)', ACK_TYPES],
+    ['errorText', 'Error text', ACK_TYPES], ['ackControlId', 'Control ID being answered (MSA-2)', ACK_TYPES],
   ]],
 ];
 
 // The fields the validator reports as required: PID-3 (patient ID), PID-5 (name) and PV1-2 (patient class).
-const MANDATORY = new Set(['mrn', 'familyName', 'givenName', 'patientClass']);
+const MANDATORY = new Set(['mrn', 'familyName', 'givenName', 'patientClass', 'orderControl', 'serviceCode', 'resultStatus', 'ackCode']);
 
 // applicable: the field exists in the selected message type. A field can also be hidden by the
 // "Show non-mandatory fields" switch; it is then still used.
@@ -276,7 +416,8 @@ function updateManualVisibility() {
   const type = fieldValue('gen-type');
   const showOptional = showOptionalSwitch.checked;
   for (const item of manualCells) {
-    item.applicable = !item.events || item.events.includes(type);
+    // An ACK answers the message in the editor, so the patient and visit fields do not apply to it
+    item.applicable = item.events ? item.events.includes(type) : type !== 'ACK';
     item.cell.hidden = !item.applicable || (!showOptional && !item.required);
   }
   for (const group of new Set(manualCells.map((item) => item.group))) {
@@ -320,7 +461,10 @@ const hiddenNote = document.getElementById('manual-hidden-note');
 /** Tell the user when fields that are out of sight still have a value or are set to empty. */
 function updateHiddenNote() {
   const count = manualCells.filter((item) => item.applicable && item.cell.hidden && (item.empty.checked || item.text.value.trim() !== '')).length;
-  hiddenNote.textContent = count ? `${count} hidden field${count === 1 ? ' still applies' : 's still apply'}` : '';
+  let note = '';
+  if (count === 1) note = '1 hidden field still applies';
+  else if (count > 1) note = `${count} hidden fields still apply`;
+  hiddenNote.textContent = note;
 }
 
 function syncAllEmpty() {

@@ -1,18 +1,24 @@
 'use strict';
 
 const { parseMessage, get, unescape } = require('./parser');
+const { messageTypeLabel } = require('./dictionary');
 
 /* ------------------------------------------------------------------ */
 /* Value checks: each returns null when the value is fine, else a reason */
 /* ------------------------------------------------------------------ */
 
-const DTM_RE = /^(\d{4})(?:(\d{2})(?:(\d{2})(?:(\d{2})(?:(\d{2})(?:(\d{2})(?:\.\d{1,4})?)?)?)?)?)?(?:([+-])(\d{4}))?$/;
+const DTM_RE = /^(\d+)(?:\.\d{1,4})?(?:[+-](\d{4}))?$/;
+const DTM_PARTS_RE = /^(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?$/;
 
 /** HL7 date/time: YYYY[MM[DD[HH[MM[SS[.S]]]]]][+/-ZZZZ] */
 function checkDtm(v) {
   const m = DTM_RE.exec(v);
-  if (!m) return 'is not a valid HL7 date/time (expected YYYY[MM[DD[HH[MM[SS]]]]])';
-  const [, y, mo, d, h, mi, s, , tz] = m;
+  const parts = m && DTM_PARTS_RE.exec(m[1]);
+  // A fraction of a second is only allowed after the seconds.
+  const fractionOk = !m || !v.includes('.') || m[1].length === 14;
+  if (!parts || !fractionOk) return 'is not a valid HL7 date/time (expected YYYY[MM[DD[HH[MM[SS]]]]])';
+  const [, y, mo, d, h, mi, s] = parts;
+  const tz = m[2];
   if (mo !== undefined && (+mo < 1 || +mo > 12)) return `has an invalid month (${mo})`;
   if (d !== undefined) {
     const daysInMonth = new Date(Date.UTC(+y, +mo, 0)).getUTCDate();
@@ -26,7 +32,7 @@ function checkDtm(v) {
 }
 
 function checkNm(v) {
-  return /^[+-]?(?:\d+\.?\d*|\.\d+)$/.test(v) ? null : 'is not a valid number';
+  return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(v) ? null : 'is not a valid number';
 }
 
 function checkSi(v) {
@@ -47,6 +53,8 @@ const REQUIRED_FIELDS = {
   OBR: [[4, 'Universal Service Identifier']],
   OBX: [[3, 'Observation Identifier'], [11, 'Observation Result Status']],
   MSA: [[1, 'Acknowledgment Code'], [2, 'Message Control ID']],
+  MRG: [[1, 'Prior Patient Identifier List']],
+  IAM: [[3, 'Allergen Code/Mnemonic/Description'], [6, 'Allergy Action Code']],
 };
 
 // Date/time fields: segment -> field numbers (the first component is checked)
@@ -57,12 +65,12 @@ const DATE_FIELDS = {
   PV1: [44, 45],
   OBR: [6, 7, 8, 14, 22, 36],
   OBX: [12, 14, 19],
+  IAM: [11, 13],
+  ORC: [9, 15],
 };
 
 // Segments whose field 1 is a sequence number (Set ID)
-const SET_ID_SEGMENTS = ['PID', 'PV1', 'OBR', 'OBX', 'NK1', 'AL1', 'DG1', 'NTE'];
-
-const ADT_SEGMENTS = { required: ['EVN', 'PID', 'PV1'] };
+const SET_ID_SEGMENTS = new Set(['PID', 'PV1', 'OBR', 'OBX', 'NK1', 'AL1', 'DG1', 'NTE', 'IAM']);
 
 // How often each segment may appear, by message type: segment -> [minimum, maximum].
 // Segments that are not listed are not counted. Repeating groups (such as the OBR/OBX
@@ -77,13 +85,20 @@ const ADT_COUNTS = {
   PV2: [0, 1],
 };
 
-// Keyed by MSH-9.1 ^ MSH-9.2 (or by MSH-9.1 alone, for example ACK)
+const MERGE_COUNTS = { EVN: [1, 1], PID: [1, 1], PD1: [0, 1], MRG: [1, 1], PV1: [0, 1] };
+const ALLERGY_COUNTS = { EVN: [1, 1], PID: [1, 1], PV1: [0, 1], PV2: [0, 1], IAM: [0, MANY] };
+
+// Keyed by MSH-9.1 ^ MSH-9.2 (or by MSH-9.1 alone, for example ACK).
+// `retiredFrom` / `notBefore` are HL7 versions: the event was withdrawn in, or only exists from, that version.
 const MESSAGE_RULES = {
   'ADT^A01': { counts: ADT_COUNTS },
   'ADT^A02': { counts: ADT_COUNTS },
   'ADT^A03': { counts: ADT_COUNTS },
   'ADT^A04': { counts: ADT_COUNTS },
   'ADT^A08': { counts: ADT_COUNTS },
+  'ADT^A18': { counts: MERGE_COUNTS, retiredFrom: '2.4', replacement: 'ADT^A40' },
+  'ADT^A40': { counts: MERGE_COUNTS },
+  'ADT^A60': { counts: ALLERGY_COUNTS, recommended: ['IAM'], notBefore: '2.4' },
   'ORU^R01': { counts: { OBR: [1, MANY] }, recommended: ['PID'] },
   'ORM^O01': { counts: { ORC: [1, MANY], PID: [0, 1], PD1: [0, 1], PV1: [0, 1], PV2: [0, 1] }, recommended: ['PID', 'OBR'] },
   ACK: { counts: { MSA: [1, 1], UAC: [0, 1] } },
@@ -93,37 +108,35 @@ const SEVERITY_ORDER = { error: 0, warning: 1, info: 2 };
 
 /* ------------------------------------------------------------------ */
 
-function validate(text) {
-  const msg = parseMessage(text);
-  const issues = [];
-
-  const add = (severity, rule, message, loc = {}) => {
+function makeAdd(issues) {
+  return (severity, rule, message, loc = {}) => {
     issues.push({
       severity,
       rule,
       message,
       path: loc.path || '',
       segment: loc.segment || '',
-      start: loc.start == null ? 0 : loc.start,
-      end: loc.end == null ? 0 : loc.end,
+      start: loc.start ?? 0,
+      end: loc.end ?? 0,
     });
   };
-  // Marks the first three characters of a segment (its name)
-  const segLoc = (seg, path = seg.name) => ({ path, segment: seg.name, start: seg.start, end: seg.start + Math.min(3, seg.raw.length) });
-  // Marks a field; an empty field is marked by the separator in front of it
-  const fieldLoc = (seg, field, start, end) => ({
+}
+
+// Marks the first three characters of a segment (its name)
+const segLoc = (seg, path = seg.name) => ({ path, segment: seg.name, start: seg.start, end: seg.start + Math.min(3, seg.raw.length) });
+
+// Marks a field; an empty field is marked by the separator in front of it
+function fieldLoc(seg, field, start, end) {
+  const separator = field.raw === '' ? 1 : 0;
+  return {
     path: `${seg.name}-${field.seq}`,
     segment: seg.name,
-    start: start != null ? start : Math.max(seg.start, field.start - (field.raw === '' ? 1 : 0)),
-    end: end != null ? end : Math.max(field.end, field.start + 1),
-  });
+    start: start ?? Math.max(seg.start, field.start - separator),
+    end: end ?? Math.max(field.end, field.start + 1),
+  };
+}
 
-  if (msg.segments.length === 0) {
-    add('error', 'EMPTY_MESSAGE', 'There is no HL7 content to validate.');
-    return finish(msg, issues);
-  }
-
-  /* ---- message header ---- */
+function checkHeader(msg, add) {
   const first = msg.segments[0];
   if (first.name !== 'MSH') {
     add('error', 'MSH_FIRST', `A message must start with an MSH segment, but the first segment is "${first.name}".`, segLoc(first));
@@ -133,108 +146,168 @@ function validate(text) {
     add('error', 'MULTIPLE_MSH', 'More than one MSH segment found - this looks like several messages. Validate them one at a time.', segLoc(mshSegments[1]));
   }
   const msh = mshSegments[0];
-  if (msh) {
-    const enc = msg.encoding || '';
-    const encField = msh.fields[2];
-    if (enc.length < 4) {
-      add('warning', 'ENCODING_CHARS', `MSH-2 should contain the four encoding characters ^~\\& but has ${enc.length}.`, fieldLoc(msh, encField));
-    }
-    if (new Set([msg.delims.field, ...enc]).size !== enc.length + 1) {
-      add('error', 'ENCODING_CHARS_DISTINCT', 'The field separator and the encoding characters must all be different.', fieldLoc(msh, encField));
+  if (!msh) return;
+  const enc = msg.encoding || '';
+  const encField = msh.fields[2];
+  if (enc.length < 4) {
+    add('warning', 'ENCODING_CHARS', String.raw`MSH-2 should contain the four encoding characters ^~\& but has ${enc.length}.`, fieldLoc(msh, encField));
+  }
+  if (new Set([msg.delims.field, ...enc]).size !== enc.length + 1) {
+    add('error', 'ENCODING_CHARS_DISTINCT', 'The field separator and the encoding characters must all be different.', fieldLoc(msh, encField));
+  }
+}
+
+function checkRequiredFields(seg, add) {
+  for (const [no, name] of REQUIRED_FIELDS[seg.name] || []) {
+    const field = seg.fields[no];
+    if (!field) {
+      add('error', 'REQUIRED_FIELD', `${seg.name}-${no} (${name}) is required but missing.`, segLoc(seg, `${seg.name}-${no}`));
+    } else if (field.raw.trim() === '') {
+      add('error', 'REQUIRED_FIELD', `${seg.name}-${no} (${name}) is required but empty.`, fieldLoc(seg, field));
     }
   }
+}
 
-  /* ---- segment by segment ---- */
-  for (const seg of msg.segments) {
-    if (!/^[A-Z][A-Z0-9]{2}$/.test(seg.name)) {
-      add('error', 'SEGMENT_NAME', `"${seg.name}" is not a valid segment name (three upper-case letters or digits).`, {
-        path: seg.name, segment: seg.name, start: seg.start, end: seg.start + Math.max(1, seg.name.length),
-      });
-      continue;
-    }
-
-    // Required fields
-    for (const [no, name] of REQUIRED_FIELDS[seg.name] || []) {
-      const field = seg.fields[no];
-      if (!field) {
-        add('error', 'REQUIRED_FIELD', `${seg.name}-${no} (${name}) is required but missing.`, segLoc(seg, `${seg.name}-${no}`));
-      } else if (field.raw.trim() === '') {
-        add('error', 'REQUIRED_FIELD', `${seg.name}-${no} (${name}) is required but empty.`, fieldLoc(seg, field));
-      }
-    }
-
-    // Leading and trailing spaces
-    checkSpaces(seg, add);
-
-    // Date/time fields
-    for (const no of DATE_FIELDS[seg.name] || []) {
-      const field = seg.fields[no];
-      if (!field) continue;
-      for (const rep of field.reps) {
-        const comp = rep.comps[0];
-        if (!comp || comp.raw.trim() === '') continue;
-        const reason = checkDtm(unescape(comp.raw, msg.delims).trimEnd());
-        if (reason) {
-          add('error', 'DATA_TYPE', `${seg.name}-${no} value "${comp.raw}" ${reason}.`, fieldLoc(seg, field, comp.start, Math.max(comp.end, comp.start + 1)));
-        }
-      }
-    }
-
-    // Set ID (sequence number)
-    if (SET_ID_SEGMENTS.includes(seg.name) && seg.fields[1] && seg.fields[1].raw.trim() !== '') {
-      const reason = checkSi(seg.fields[1].raw.trimEnd());
+function checkDateFields(seg, msg, add) {
+  for (const no of DATE_FIELDS[seg.name] || []) {
+    const field = seg.fields[no];
+    if (!field) continue;
+    for (const rep of field.reps) {
+      const comp = rep.comps[0];
+      if (!comp || comp.raw.trim() === '') continue;
+      const reason = checkDtm(unescape(comp.raw, msg.delims).trimEnd());
       if (reason) {
-        add('error', 'DATA_TYPE', `${seg.name}-1 value "${seg.fields[1].raw}" ${reason}.`, fieldLoc(seg, seg.fields[1]));
-      }
-    }
-
-    // OBX: the value type (OBX-2) decides how OBX-5 is read
-    if (seg.name === 'OBX') {
-      const valueType = seg.fields[2] ? seg.fields[2].raw.trim() : '';
-      const value = seg.fields[5];
-      if (value && value.raw !== '') {
-        if (valueType === '') {
-          add('error', 'OBX_VALUE_TYPE', 'OBX-5 has a value but OBX-2 (Value Type) is empty.', seg.fields[2] ? fieldLoc(seg, seg.fields[2]) : segLoc(seg, 'OBX-2'));
-        } else if (valueType === 'NM') {
-          for (const rep of value.reps) {
-            const reason = rep.raw.trim() === '' ? null : checkNm(rep.raw.trimEnd());
-            if (reason) {
-              add('error', 'DATA_TYPE', `OBX-5 value "${rep.raw}" ${reason} (OBX-2 says NM).`, fieldLoc(seg, value, rep.start, Math.max(rep.end, rep.start + 1)));
-            }
-          }
-        }
+        add('error', 'DATA_TYPE', `${seg.name}-${no} value "${comp.raw}" ${reason}.`, fieldLoc(seg, field, comp.start, Math.max(comp.end, comp.start + 1)));
       }
     }
   }
+}
 
-  /* ---- message type and the segments it needs ---- */
-  if (msh) {
-    const code = get(msg, 'MSH-9.1').trim();
-    const event = get(msg, 'MSH-9.2').trim();
-    if (code && !event && code !== 'ACK') {
-      add('error', 'MSH9_EVENT', `MSH-9.2 (trigger event) is missing for message type ${code}.`, fieldLoc(msh, msh.fields[9]));
+function checkSetId(seg, add) {
+  const field = seg.fields[1];
+  if (!SET_ID_SEGMENTS.has(seg.name) || !field || field.raw.trim() === '') return;
+  const reason = checkSi(field.raw.trimEnd());
+  if (reason) {
+    add('error', 'DATA_TYPE', `${seg.name}-1 value "${field.raw}" ${reason}.`, fieldLoc(seg, field));
+  }
+}
+
+// OBX: the value type (OBX-2) decides how OBX-5 is read
+function checkObx(seg, add) {
+  const typeField = seg.fields[2];
+  const valueType = typeField ? typeField.raw.trim() : '';
+  const value = seg.fields[5];
+  if (!value || value.raw === '') return;
+  if (valueType === '') {
+    add('error', 'OBX_VALUE_TYPE', 'OBX-5 has a value but OBX-2 (Value Type) is empty.', typeField ? fieldLoc(seg, typeField) : segLoc(seg, 'OBX-2'));
+    return;
+  }
+  if (valueType !== 'NM') return;
+  for (const rep of value.reps) {
+    const reason = rep.raw.trim() === '' ? null : checkNm(rep.raw.trimEnd());
+    if (reason) {
+      add('error', 'DATA_TYPE', `OBX-5 value "${rep.raw}" ${reason} (OBX-2 says NM).`, fieldLoc(seg, value, rep.start, Math.max(rep.end, rep.start + 1)));
     }
-    const type = code ? (event ? `${code}^${event}` : code) : '';
-    const rules = MESSAGE_RULES[type] || MESSAGE_RULES[code];
-    if (rules) {
-      for (const [name, [min, max]] of Object.entries(rules.counts)) {
-        const found = msg.segments.filter((s) => s.name === name);
-        if (found.length < min) {
-          add('error', 'MISSING_SEGMENT', `Segment ${name} is required in ${type} (at least ${min} expected, ${found.length} found).`, segLoc(msh));
-        } else if (found.length > max) {
-          add('error', 'TOO_MANY_SEGMENTS', `Segment ${name} appears ${found.length} times in ${type}, but at most ${max} ${max === 1 ? 'is' : 'are'} allowed.`, segLoc(found[max]));
-        }
-      }
-      for (const name of rules.recommended || []) {
-        if (!msg.segments.some((s) => s.name === name)) {
-          add('warning', 'RECOMMENDED_SEGMENT', `Segment ${name} is normally present in ${type} but is missing.`, segLoc(msh));
-        }
-      }
+  }
+}
+
+// ORC-2 (placer) or ORC-3 (filler) order number must be present; which one depends on who creates the order
+function checkOrderNumbers(seg, add) {
+  const empty = (n) => !seg.fields[n] || seg.fields[n].raw.trim() === '';
+  if (empty(2) && empty(3)) {
+    const field = seg.fields[2];
+    add('warning', 'ORDER_NUMBER', 'ORC-2 (placer order number) and ORC-3 (filler order number) are both empty; an order needs at least one of them.', field ? fieldLoc(seg, field) : segLoc(seg, 'ORC-2'));
+  }
+}
+
+function checkSegment(seg, msg, add) {
+  if (!/^[A-Z][A-Z0-9]{2}$/.test(seg.name)) {
+    add('error', 'SEGMENT_NAME', `"${seg.name}" is not a valid segment name (three upper-case letters or digits).`, {
+      path: seg.name, segment: seg.name, start: seg.start, end: seg.start + Math.max(1, seg.name.length),
+    });
+    return;
+  }
+  checkRequiredFields(seg, add);
+  checkSpaces(seg, add);
+  checkDateFields(seg, msg, add);
+  checkSetId(seg, add);
+  if (seg.name === 'OBX') checkObx(seg, add);
+  if (seg.name === 'ORC') checkOrderNumbers(seg, add);
+}
+
+/** Message type (MSH-9) and the segments it needs; returns the type label. */
+function checkMessageType(msg, msh, add) {
+  const code = get(msg, 'MSH-9.1').trim();
+  const event = get(msg, 'MSH-9.2').trim();
+  if (code && !event && code !== 'ACK') {
+    add('error', 'MSH9_EVENT', `MSH-9.2 (trigger event) is missing for message type ${code}.`, fieldLoc(msh, msh.fields[9]));
+  }
+  const type = messageTypeLabel(code, event);
+  const rules = MESSAGE_RULES[type] || MESSAGE_RULES[code];
+  if (rules) {
+    checkVersion(msg, msh, type, rules, add);
+    checkSegmentCounts(msg, msh, type, rules, add);
+  }
+  return type;
+}
+
+/** Dotted HL7 versions compared number by number: "2.5.1" is after "2.5". */
+function versionAtLeast(version, minimum) {
+  const a = version.split('.').map(Number);
+  const b = minimum.split('.').map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] || 0) - (b[i] || 0);
+    if (d !== 0) return d > 0;
+  }
+  return true;
+}
+
+/** Warns when the event does not exist in the message's HL7 version (MSH-12). */
+function checkVersion(msg, msh, type, rules, add) {
+  const version = get(msg, 'MSH-12.1').trim();
+  if (!/^\d+(\.\d+)*$/.test(version)) return;
+  const where = msh.fields[12] ? fieldLoc(msh, msh.fields[12]) : segLoc(msh, 'MSH-12');
+  if (rules.retiredFrom && versionAtLeast(version, rules.retiredFrom)) {
+    add('warning', 'EVENT_RETIRED', `${type} was withdrawn in HL7 ${rules.retiredFrom}; version ${version} should use ${rules.replacement} instead.`, where);
+  }
+  if (rules.notBefore && !versionAtLeast(version, rules.notBefore)) {
+    add('warning', 'EVENT_NOT_IN_VERSION', `${type} is only defined from HL7 ${rules.notBefore}, but the message says version ${version}.`, where);
+  }
+}
+
+function checkSegmentCounts(msg, msh, type, rules, add) {
+  for (const [name, [min, max]] of Object.entries(rules.counts)) {
+    const found = msg.segments.filter((s) => s.name === name);
+    if (found.length < min) {
+      add('error', 'MISSING_SEGMENT', `Segment ${name} is required in ${type} (at least ${min} expected, ${found.length} found).`, segLoc(msh));
+    } else if (found.length > max) {
+      const verb = max === 1 ? 'is' : 'are';
+      add('error', 'TOO_MANY_SEGMENTS', `Segment ${name} appears ${found.length} times in ${type}, but at most ${max} ${verb} allowed.`, segLoc(found[max]));
     }
-    return finish(msg, issues, type);
+  }
+  for (const name of rules.recommended || []) {
+    if (!msg.segments.some((s) => s.name === name)) {
+      add('warning', 'RECOMMENDED_SEGMENT', `Segment ${name} is normally present in ${type} but is missing.`, segLoc(msh));
+    }
+  }
+}
+
+function validate(text) {
+  const msg = parseMessage(text);
+  const issues = [];
+  const add = makeAdd(issues);
+
+  if (msg.segments.length === 0) {
+    add('error', 'EMPTY_MESSAGE', 'There is no HL7 content to validate.');
+    return finish(msg, issues);
   }
 
-  return finish(msg, issues);
+  checkHeader(msg, add);
+  for (const seg of msg.segments) checkSegment(seg, msg, add);
+
+  const msh = msg.segments.find((s) => s.name === 'MSH');
+  const type = msh ? checkMessageType(msg, msh, add) : '';
+  return finish(msg, issues, type);
 }
 
 /**
@@ -257,7 +330,8 @@ function checkSpaces(seg, add) {
       rep.comps.forEach((comp, i) => {
         const raw = comp.raw;
         if (raw === '') return;
-        const path = `${seg.name}-${seq}${rep.comps.length > 1 ? `.${i + 1}` : ''}`;
+        const partSuffix = rep.comps.length > 1 ? `.${i + 1}` : '';
+        const path = `${seg.name}-${seq}${partSuffix}`;
         const loc = (start, end) => ({ path, segment: seg.name, start, end });
 
         if (raw.trim() === '') {

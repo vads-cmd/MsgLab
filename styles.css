@@ -166,7 +166,11 @@ body {
 }
 
 /* ---- tabs ---- */
-[hidden] { display: none !important; }
+.manual-cell[hidden],
+.manual-group[hidden],
+.output[hidden] {
+  display: none;
+}
 
 .tabs {
   display: flex;
@@ -331,6 +335,11 @@ button.primary:hover { filter: brightness(1.1); }
   color: var(--muted);
 }
 .gen-status.error { color: #d64545; }
+.gen-restore[hidden] { display: none; }
+.gen-restore {
+  align-self: center;
+  font-size: 12px;
+}
 
 /* ---- manual values ---- */
 .manual {
@@ -478,6 +487,41 @@ button.primary:hover { filter: brightness(1.1); }
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* ---- bulk generation ---- */
+.bulk-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: flex-end;
+  padding: 4px 16px 10px;
+}
+.bulk-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.bulk-form input[type="number"] { width: 110px; }
+.bulk-types {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px 8px;
+  margin: 0;
+}
+.bulk-types legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
+#bulk-types { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+#bulk-types label { flex-direction: row; align-items: center; gap: 5px; color: inherit; }
+.bulk-actions { display: flex; gap: 12px; align-items: center; }
+.bulk-result { padding: 0 16px 12px; }
+.bulk-result[hidden] { display: none; }
+.bulk-result-bar { display: flex; gap: 12px; align-items: center; font-size: 12px; margin-bottom: 6px; }
+.bulk-table-wrap { max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+.bulk-table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.bulk-table th, .bulk-table td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.bulk-table th { position: sticky; top: 0; background: var(--panel, var(--bg)); }
+.bulk-table button { font-size: 12px; }
 
 /* ---- manual values toolbar ---- */
 .manual-toolbar {

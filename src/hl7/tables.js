@@ -19,8 +19,8 @@ const TABLES = {
     codes: {
       A01: 'Admit/visit notification', A02: 'Transfer a patient', A03: 'Discharge/end visit', A04: 'Register a patient', A05: 'Pre-admit a patient',
       A06: 'Change an outpatient to an inpatient', A07: 'Change an inpatient to an outpatient', A08: 'Update patient information',
-      A11: 'Cancel admit/visit notification', A12: 'Cancel transfer', A13: 'Cancel discharge/end visit', A28: 'Add person information',
-      A31: 'Update person information', A40: 'Merge patient - patient identifier list', O01: 'Order message', O21: 'Laboratory order',
+      A11: 'Cancel admit/visit notification', A18: 'Merge patient information', A12: 'Cancel transfer', A13: 'Cancel discharge/end visit', A28: 'Add person information',
+      A31: 'Update person information', A40: 'Merge patient - patient identifier list', A60: 'Update allergy information', O01: 'Order message', O21: 'Laboratory order',
       R01: 'Unsolicited transmission of requested observation', S12: 'Notification of new appointment booking', T02: 'Original document notification and content',
       V04: 'Unsolicited vaccination record update',
     },
@@ -134,6 +134,15 @@ const TABLES = {
     codes: { AA: 'Animal Allergy', DA: 'Drug allergy', EA: 'Environmental Allergy', FA: 'Food allergy', LA: 'Pollen Allergy', MA: 'Miscellaneous allergy', MC: 'Miscellaneous contraindication', PA: 'Plant Allergy' },
   },
   '0128': { name: 'Allergy Severity', codes: { MI: 'Mild', MO: 'Moderate', SV: 'Severe', U: 'Unknown' } },
+  '0357': {
+    name: 'Message Error Condition Codes',
+    codes: {
+      100: 'Segment sequence error', 101: 'Required field missing', 102: 'Data type error', 103: 'Table value not found',
+      200: 'Unsupported message type', 201: 'Unsupported event code', 202: 'Unsupported processing id', 203: 'Unsupported version id',
+      204: 'Unknown key identifier', 205: 'Duplicate key identifier', 206: 'Application record locked', 207: 'Application internal error',
+    },
+  },
+  '0323': { name: 'Allergy Action Code', codes: { A: 'Add/Insert', D: 'Delete', U: 'Update', X: 'No change' } },
   '0136': { name: 'Yes/No Indicator', codes: { Y: 'Yes', N: 'No' } },
   '0155': { name: 'Accept/Application Acknowledgment Conditions', codes: { AL: 'Always', ER: 'Error/reject conditions only', NE: 'Never', SU: 'Successful completion only' } },
   '0189': { name: 'Ethnic Group', codes: { H: 'Hispanic or Latino', N: 'Not Hispanic or Latino', U: 'Unknown' } },
@@ -168,7 +177,7 @@ const TABLES = {
 function lookup(table, code) {
   const t = TABLES[table];
   if (!t) return null;
-  return Object.prototype.hasOwnProperty.call(t.codes, code) ? t.codes[code] : null;
+  return Object.hasOwn(t.codes, code) ? t.codes[code] : null;
 }
 
 function tableName(table) {

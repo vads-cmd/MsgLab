@@ -17,7 +17,13 @@
       <select id="gen-type"><option value="ADT^A01">ADT^A01 - Admit/Visit Notification</option>
         <option value="ADT^A02">ADT^A02 - Transfer a Patient</option>
         <option value="ADT^A03">ADT^A03 - Discharge/End Visit</option>
-        <option value="ADT^A08">ADT^A08 - Update Patient Information</option></select>
+        <option value="ADT^A08">ADT^A08 - Update Patient Information</option>
+        <option value="ADT^A18">ADT^A18 - Merge Patient Information</option>
+        <option value="ADT^A40">ADT^A40 - Merge Patient - Patient Identifier List</option>
+        <option value="ADT^A60">ADT^A60 - Update Adverse Reaction Information</option>
+        <option value="ORM^O01">ORM^O01 - General Order Message</option>
+        <option value="ORU^R01">ORU^R01 - Unsolicited Observation Result</option>
+        <option value="ACK">ACK - Reply to the message in the editor</option></select>
     </label>
     <label>HL7 version
       <select id="gen-version"><option>2.3</option><option>2.3.1</option><option>2.4</option><option>2.5</option><option selected>2.5.1</option><option>2.6</option><option>2.7</option><option>2.8</option></select>
@@ -35,18 +41,19 @@
     </label>
     <label>Seed <input type="text" id="gen-seed" placeholder="random" maxlength="40"></label>
     <label class="switch" title="On: every manual field is left empty. Off: every manual field is random. Fields you tick or type yourself can still be changed afterwards.">
-      <input type="checkbox" id="gen-all-empty" role="switch">
+      <input type="checkbox" id="gen-all-empty">
       <span>Set all fields empty</span>
     </label>
     <button type="submit" class="primary">Generate</button>
-    <span id="gen-status" class="gen-status" role="status"></span>
+    <output id="gen-status" class="gen-status"></output>
+    <button type="button" id="gen-restore" class="gen-restore" hidden>Restore the original message</button>
   </form>
 
   <details id="manual" class="manual">
     <summary>Manual values <span class="manual-hint">(optional: type a value, tick "empty" to leave a field blank, or leave both for a random value)</span></summary>
     <div class="manual-toolbar">
       <label class="switch" title="Off: only the mandatory fields are listed. Hidden fields keep their values and are still used.">
-        <input type="checkbox" id="manual-show-optional" role="switch" checked>
+        <input type="checkbox" id="manual-show-optional" checked>
         <span>Show non-mandatory fields</span>
       </label>
       <span id="manual-hidden-note" class="manual-note"></span>
@@ -55,9 +62,42 @@
     <div class="manual-actions"><button type="button" id="manual-clear">Clear manual values</button></div>
   </details>
 
+  <details id="bulk" class="manual bulk">
+    <summary>Bulk generation <span class="manual-hint">(many messages at once, for filling a test database; uses the version, applications, processing and seed from above)</span></summary>
+    <form id="bulk-form" class="bulk-form" autocomplete="off">
+      <label>Number of messages <input type="number" id="bulk-count" min="1" max="5000" value="10"></label>
+      <label>Minutes between messages <input type="number" id="bulk-minutes" min="0" max="1440" value="5"></label>
+      <label>Patients
+        <select id="bulk-mode">
+          <option value="independent">A new patient for every message</option>
+          <option value="journey">Follow each patient through the chosen events</option>
+        </select>
+      </label>
+      <fieldset class="bulk-types">
+        <legend>Message types</legend>
+        <div id="bulk-types"></div>
+      </fieldset>
+      <div class="bulk-actions">
+        <button type="submit" class="primary" id="bulk-generate">Generate bulk</button>
+        <output id="bulk-status" class="gen-status"></output>
+      </div>
+    </form>
+    <div id="bulk-result" class="bulk-result" hidden>
+      <div class="bulk-result-bar">
+        <span id="bulk-summary"></span>
+        <button type="button" id="bulk-copy">Copy all messages</button>
+        <span id="bulk-copy-status" class="gen-status"></span>
+      </div>
+      <div class="bulk-table-wrap"><table class="bulk-table">
+          <thead><tr><th>#</th><th>Type</th><th>Patient</th><th>Time</th><th>Control ID</th><th>Message</th></tr></thead>
+          <tbody id="bulk-rows"></tbody>
+        </table></div>
+    </div>
+  </details>
+
   <main class="panes">
     <section class="pane">
-      <h2>Message</h2>
+      <h2><label for="message">Message</label></h2>
       <textarea id="message" spellcheck="false" wrap="off"
         placeholder="Paste or type an HL7 message here, for example:&#10;MSH|^~\&amp;|SENDER|FACILITY|RECEIVER|FACILITY|20261023120000||ADT^A01|MSG0001|T|2.5.1&#10;PID|1||12345^^^HOSP^MR||DOE^JOHN||19800412|M"></textarea>
     </section>

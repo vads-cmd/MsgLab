@@ -7,4 +7,5 @@ contextBridge.exposeInMainWorld('hl7', {
   validate: (text) => ipcRenderer.invoke('hl7:validate', text),
   explain: (text) => ipcRenderer.invoke('hl7:explain', text),
   generate: (options) => ipcRenderer.invoke('hl7:generate', options),
+  generateBulk: (options) => ipcRenderer.invoke('hl7:generateBulk', options),
 });

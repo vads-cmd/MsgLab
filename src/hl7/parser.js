@@ -26,7 +26,7 @@ function splitLines(text) {
     let lineText = text.slice(i, j);
     let start = i;
     // MLLP framing characters are not part of the message.
-    if (lineText.charCodeAt(0) === 0x0b) {
+    if (lineText.codePointAt(0) === 0x0b) {
       lineText = lineText.slice(1);
       start += 1;
     }
@@ -180,7 +180,7 @@ function unescape(str, d = DEFAULT_DELIMS) {
       case '.br': rep = '\n'; break;
       default:
         if (/^X([0-9A-Fa-f]{2})+$/.test(code)) {
-          rep = code.slice(1).match(/../g).map((h) => String.fromCharCode(parseInt(h, 16))).join('');
+          rep = code.slice(1).match(/../g).map((h) => String.fromCodePoint(Number.parseInt(h, 16))).join('');
         }
     }
     out += rep === null ? str.slice(i, j + 1) : rep;

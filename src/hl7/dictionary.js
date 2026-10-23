@@ -150,6 +150,18 @@ def('OBX', 'Observation/Result', [
   [19, 'Date/Time of the Analysis', 'TS'],
 ]);
 
+def('MRG', 'Merge Patient Information', [
+  [1, 'Prior Patient Identifier List', 'CX*', { 5: '0203' }], [2, 'Prior Alternate Patient ID', 'CX*'], [3, 'Prior Patient Account Number', 'CX', { 5: '0203' }],
+  [4, 'Prior Patient ID', 'CX'], [5, 'Prior Visit Number', 'CX'], [6, 'Prior Alternate Visit ID', 'CX'], [7, 'Prior Patient Name', 'XPN*', { 7: '0200' }],
+]);
+
+def('IAM', 'Patient Adverse Reaction Information', [
+  [1, 'Set ID - IAM', 'SI'], [2, 'Allergen Type Code', 'CE', { 1: '0127' }], [3, 'Allergen Code/Mnemonic/Description', 'CE'],
+  [4, 'Allergy Severity Code', 'CE', { 1: '0128' }], [5, 'Allergy Reaction Code', 'ST*'], [6, 'Allergy Action Code', 'CNE', { 1: '0323' }],
+  [7, 'Allergy Unique Identifier', 'EI'], [8, 'Action Reason', 'ST'], [9, 'Sensitivity to Causative Agent Code', 'CE'],
+  [10, 'Allergen Group Code/Mnemonic/Description', 'CE'], [11, 'Onset Date', 'DT'], [12, 'Onset Date Text', 'ST'], [13, 'Reported Date/Time', 'TS'],
+]);
+
 def('NTE', 'Notes and Comments', [
   [1, 'Set ID - NTE', 'SI'], [2, 'Source of Comment', 'ID', { 1: '0105' }], [3, 'Comment', 'FT*'], [4, 'Comment Type', 'CE'],
 ]);
@@ -171,7 +183,7 @@ def('MSA', 'Message Acknowledgment', [
 ]);
 
 def('ERR', 'Error', [
-  [1, 'Error Code and Location', 'ELD*'], [2, 'Error Location', 'ERL*'], [3, 'HL7 Error Code', 'CWE'], [4, 'Severity', 'ID', { 1: '0516' }],
+  [1, 'Error Code and Location', 'ELD*'], [2, 'Error Location', 'ERL*'], [3, 'HL7 Error Code', 'CWE', { 1: '0357' }], [4, 'Severity', 'ID', { 1: '0516' }],
   [5, 'Application Error Code', 'CWE'], [6, 'Application Error Parameter', 'ST*'], [7, 'Diagnostic Information', 'TX'], [8, 'User Message', 'TX'],
   [9, 'Inform Person Indicator', 'IS*'], [10, 'Override Type', 'CWE'], [11, 'Override Reason Code', 'CWE*'], [12, 'Help Desk Contact Point', 'XTN*'],
 ]);
@@ -192,6 +204,9 @@ const MESSAGE_NAMES = {
   'ADT^A03': 'Discharge/End Visit',
   'ADT^A04': 'Register a Patient',
   'ADT^A08': 'Update Patient Information',
+  'ADT^A18': 'Merge Patient Information',
+  'ADT^A40': 'Merge Patient - Patient Identifier List',
+  'ADT^A60': 'Update Adverse Reaction Information',
   'ORU^R01': 'Unsolicited Observation Result',
   'ORM^O01': 'General Order Message',
   ACK: 'General Acknowledgment',
@@ -205,8 +220,14 @@ function componentNames(dt) {
   return COMPOSITES[dt] || null;
 }
 
+/** "ADT^A01" from code and event; just the code when there is no event, empty when there is no code. */
+function messageTypeLabel(code, event) {
+  if (!code) return '';
+  return event ? `${code}^${event}` : code;
+}
+
 function messageName(code, event) {
   return MESSAGE_NAMES[`${code}^${event}`] || MESSAGE_NAMES[code] || '';
 }
 
-module.exports = { SEGMENTS, COMPOSITES, DATA_TYPE_NAMES, MESSAGE_NAMES, getSegment, componentNames, messageName };
+module.exports = { SEGMENTS, COMPOSITES, DATA_TYPE_NAMES, MESSAGE_NAMES, getSegment, componentNames, messageName, messageTypeLabel };
