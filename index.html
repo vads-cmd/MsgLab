@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HL7 Workbench</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>HL7 Workbench</h1>
+  </header>
+
+  <form id="generator" class="generator" autocomplete="off">
+    <label>Message type
+      <select id="gen-type"><option value="ADT^A01">ADT^A01 - Admit/Visit Notification</option>
+        <option value="ADT^A02">ADT^A02 - Transfer a Patient</option>
+        <option value="ADT^A03">ADT^A03 - Discharge/End Visit</option>
+        <option value="ADT^A08">ADT^A08 - Update Patient Information</option></select>
+    </label>
+    <label>HL7 version
+      <select id="gen-version"><option>2.3</option><option>2.3.1</option><option>2.4</option><option>2.5</option><option selected>2.5.1</option><option>2.6</option><option>2.7</option><option>2.8</option></select>
+    </label>
+    <label>Sending application <input type="text" id="gen-send-app" value="HIS" maxlength="60"></label>
+    <label>Sending facility <input type="text" id="gen-send-fac" value="MAINHOSP" maxlength="60"></label>
+    <label>Receiving application <input type="text" id="gen-recv-app" value="EHR" maxlength="60"></label>
+    <label>Receiving facility <input type="text" id="gen-recv-fac" value="MAINHOSP" maxlength="60"></label>
+    <label>Processing
+      <select id="gen-processing">
+        <option value="T" selected>T - Training/test</option>
+        <option value="P">P - Production</option>
+        <option value="D">D - Debugging</option>
+      </select>
+    </label>
+    <label>Seed <input type="text" id="gen-seed" placeholder="random" maxlength="40"></label>
+    <label class="switch" title="On: every manual field is left empty. Off: every manual field is random. Fields you tick or type yourself can still be changed afterwards.">
+      <input type="checkbox" id="gen-all-empty" role="switch">
+      <span>Set all fields empty</span>
+    </label>
+    <button type="submit" class="primary">Generate</button>
+    <span id="gen-status" class="gen-status" role="status"></span>
+  </form>
+
+  <details id="manual" class="manual">
+    <summary>Manual values <span class="manual-hint">(optional: type a value, tick "empty" to leave a field blank, or leave both for a random value)</span></summary>
+    <div class="manual-toolbar">
+      <label class="switch" title="Off: only the mandatory fields are listed. Hidden fields keep their values and are still used.">
+        <input type="checkbox" id="manual-show-optional" role="switch" checked>
+        <span>Show non-mandatory fields</span>
+      </label>
+      <span id="manual-hidden-note" class="manual-note"></span>
+    </div>
+    <div id="manual-fields"></div>
+    <div class="manual-actions"><button type="button" id="manual-clear">Clear manual values</button></div>
+  </details>
+
+  <main class="panes">
+    <section class="pane">
+      <h2>Message</h2>
+      <textarea id="message" spellcheck="false" wrap="off"
+        placeholder="Paste or type an HL7 message here, for example:&#10;MSH|^~\&amp;|SENDER|FACILITY|RECEIVER|FACILITY|20261023120000||ADT^A01|MSG0001|T|2.5.1&#10;PID|1||12345^^^HOSP^MR||DOE^JOHN||19800412|M"></textarea>
+    </section>
+
+    <section class="pane">
+      <div class="tabs" role="tablist">
+        <button class="tab active" role="tab" id="tab-validation" data-tab="validation" aria-selected="true" aria-controls="panel-validation">Validation</button>
+        <button class="tab" role="tab" id="tab-explain" data-tab="explain" aria-selected="false" aria-controls="panel-explain">Explain</button>
+      </div>
+      <div id="panel-validation" class="output" role="tabpanel" aria-labelledby="tab-validation"></div>
+      <div id="panel-explain" class="output" role="tabpanel" aria-labelledby="tab-explain" hidden></div>
+    </section>
+  </main>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

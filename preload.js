@@ -1,0 +1,10 @@
+'use strict';
+
+const { contextBridge, ipcRenderer } = require('electron');
+
+// The only functions the page can call. Add new ones here as the app grows.
+contextBridge.exposeInMainWorld('hl7', {
+  validate: (text) => ipcRenderer.invoke('hl7:validate', text),
+  explain: (text) => ipcRenderer.invoke('hl7:explain', text),
+  generate: (options) => ipcRenderer.invoke('hl7:generate', options),
+});

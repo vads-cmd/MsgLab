@@ -1,0 +1,15 @@
+{
+  "name": "hl7-workbench",
+  "version": "0.1.0",
+  "description": "Generate, validate and explain HL7 v2 messages for testing",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test"
+  },
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "electron": "^45.0.0"
+  }
+}
