@@ -13,4 +13,10 @@ contextBridge.exposeInMainWorld('hl7', {
   openFile: () => ipcRenderer.invoke('file:open'),
   openFileData: (payload) => ipcRenderer.invoke('file:openData', payload),
   setDirty: (dirty) => ipcRenderer.invoke('file:setDirty', dirty),
+  newMessage: () => ipcRenderer.invoke('file:new'),
+  onMenuCommand: (callback) => ipcRenderer.on('menu:command', (_event, command) => callback(command)),
+  loadSettings: () => ipcRenderer.invoke('settings:load'),
+  saveSettings: (controls) => ipcRenderer.invoke('settings:save', controls),
+  exportMessages: (payload) => ipcRenderer.invoke('file:export', payload),
+  onExportProgress: (callback) => ipcRenderer.on('export:progress', (_event, progress) => callback(progress)),
 });

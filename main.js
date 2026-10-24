@@ -1,12 +1,14 @@
 'use strict';
 
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain } = require('electron');
 const path = require('node:path');
 const { validate } = require('./src/hl7/validator');
 const { explain } = require('./src/hl7/explainer');
 const { generate } = require('./src/hl7/generator');
 const { generateBulk } = require('./src/hl7/bulk');
 const files = require('./src/files');
+const settingsStore = require('./src/settings');
+const { buildMenuTemplate } = require('./src/menu');
 
 // The HL7 logic runs here in the main process; the page asks for it through the preload script.
 const asText = (value) => (typeof value === 'string' ? value : '');
@@ -67,6 +69,27 @@ ipcMain.handle('hl7:generateBulk', (_event, options) => {
 const savedPaths = new Map(); // window -> the file it was last saved to
 let lastFolder = null;
 
+// Remembered settings (form choices and the last folder), kept in a small file in the app's data folder.
+let controlSettings = {};
+const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
+let writing = Promise.resolve();
+function persistSettings() {
+  const snapshot = { controls: controlSettings, folder: lastFolder };
+  // one write after the other, so two quick saves cannot mix
+  writing = writing.then(() => settingsStore.saveSettings(settingsFile(), snapshot)).catch((err) => console.error('Could not save settings:', err.message));
+  return writing;
+}
+function rememberFolder(folder) {
+  lastFolder = folder;
+  persistSettings();
+}
+
+ipcMain.handle('settings:load', () => ({ ids: [...settingsStore.REMEMBERED_CONTROLS], controls: controlSettings }));
+ipcMain.handle('settings:save', (_event, controls) => {
+  controlSettings = settingsStore.cleanSettings({ controls }).controls;
+  return persistSettings().then(() => true);
+});
+
 ipcMain.handle('file:save', async (event, payload) => {
   const p = payload && typeof payload === 'object' ? payload : {};
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -84,7 +107,7 @@ ipcMain.handle('file:save', async (event, payload) => {
     }
     await files.writeFile(target, data);
     savedPaths.set(event.sender.id, target);
-    lastFolder = path.dirname(target);
+    rememberFolder(path.dirname(target));
     return { ok: true, fileName: path.basename(target), bytes: data.length, warning };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -93,6 +116,57 @@ ipcMain.handle('file:save', async (event, payload) => {
 
 ipcMain.handle('file:forget', (event) => {
   savedPaths.delete(event.sender.id);
+});
+
+// Exporting the messages of the bulk list: one file (save dialog) or several (folder dialog).
+// The page sends only the texts and the options; the place comes from the dialog.
+ipcMain.handle('file:export', async (event, payload) => {
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const win = BrowserWindow.fromWebContents(event.sender);
+  try {
+    if (!Array.isArray(p.messages) || p.messages.some((text) => typeof text !== 'string')) throw new TypeError('The messages must be a list of text.');
+    const options = { lineEnding: p.lineEnding, encoding: p.encoding, mllp: p.mllp === true, batch: p.batch === true };
+    const plan = files.planExport(p.messages, { mode: p.mode });
+    const prepared = files.prepareExportFiles(plan, options);
+    if (p.mode === 'one') {
+      const chosen = await dialog.showSaveDialog(win, {
+        title: 'Export messages',
+        defaultPath: path.join(lastFolder ?? app.getPath('documents'), prepared[0].fileName),
+        filters: [{ name: 'HL7 messages', extensions: ['hl7'] }, { name: 'Text files', extensions: ['txt'] }, { name: 'All files', extensions: ['*'] }],
+      });
+      if (chosen.canceled || !chosen.filePath) return { ok: false, canceled: true };
+      await files.writeFile(chosen.filePath, prepared[0].data);
+      rememberFolder(path.dirname(chosen.filePath));
+      return { ok: true, files: 1, bytes: prepared[0].data.length, where: path.basename(chosen.filePath), messages: plan[0].texts.length };
+    }
+    const chosen = await dialog.showOpenDialog(win, {
+      title: p.mode === 'each' ? 'Choose a folder for the message files' : 'Choose a folder for the files',
+      defaultPath: lastFolder ?? app.getPath('documents'),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (chosen.canceled || chosen.filePaths.length === 0) return { ok: false, canceled: true };
+    const folder = chosen.filePaths[0];
+    const existing = await files.existingFiles(folder, prepared);
+    if (existing.length > 0) {
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'warning',
+        buttons: ['Replace', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'Files already exist',
+        message: `${existing.length} of the ${prepared.length} files already exist in this folder.`,
+        detail: `${existing.slice(0, 5).join('\n')}${existing.length > 5 ? '\n...' : ''}`,
+      });
+      if (response !== 0) return { ok: false, canceled: true };
+    }
+    const written = await files.writeExport(folder, prepared, (done, total) => {
+      if (done % 50 === 0 || done === total) event.sender.send('export:progress', { done, total });
+    });
+    rememberFolder(folder);
+    return { ok: true, ...written, where: path.basename(folder), messages: plan.reduce((sum, file) => sum + file.texts.length, 0) };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 });
 
 // Windows with changes that were not saved; the page reports this as the text is edited
@@ -118,6 +192,26 @@ async function confirmDiscard(win, action) {
     detail: 'If you continue, the changes are lost.',
   });
   return response === 0;
+}
+
+// New message: asks first when there are unsaved changes; the page then clears the editor.
+ipcMain.handle('file:new', async (event) => {
+  const id = event.sender.id;
+  if (dirtyWindows.has(id) && !(await confirmDiscard(BrowserWindow.fromWebContents(event.sender), 'Discard changes and start new'))) return { ok: false, canceled: true };
+  savedPaths.delete(id);
+  dirtyWindows.delete(id);
+  return { ok: true };
+});
+
+// The File menu: the chosen command goes to the window that has the focus, and the page does the work.
+function sendMenuCommand(command) {
+  const win = BrowserWindow.getFocusedWindow();
+  if (win) win.webContents.send('menu:command', command);
+}
+
+function setUpMenu() {
+  const template = buildMenuTemplate({ send: sendMenuCommand, isMac: process.platform === 'darwin', appName: app.name, devTools: !app.isPackaged });
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
 // Opening: from the dialog (the file stays tied to the window, so Save writes back to it when it holds
@@ -149,7 +243,7 @@ ipcMain.handle('file:open', (event) => openFor(event, async (win) => {
   if (chosen.canceled || chosen.filePaths.length === 0) return null;
   const file = chosen.filePaths[0];
   const read = files.readMessages(await files.readFile(file));
-  lastFolder = path.dirname(file);
+  rememberFolder(path.dirname(file));
   return { path: file, fileName: path.basename(file), read };
 }));
 
@@ -193,7 +287,11 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  const saved = await settingsStore.loadSettings(settingsFile());
+  controlSettings = saved.controls;
+  lastFolder = saved.folder;
+  setUpMenu();
   createWindow();
   // macOS: re-create the window when the dock icon is clicked and no windows are open
   app.on('activate', () => {

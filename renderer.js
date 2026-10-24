@@ -181,6 +181,12 @@ const restoreButton = document.getElementById('gen-restore');
 let replacedText = null; // the message an ACK replaced, so it can be brought back
 const fieldValue = (id) => document.getElementById(id).value;
 
+/** Shows a problem in a status line. */
+function showFailure(element, message) {
+  element.classList.add('error');
+  element.textContent = message;
+}
+
 async function generateMessage() {
   genStatus.classList.remove('error');
   genStatus.textContent = '';
@@ -199,7 +205,10 @@ async function generateMessage() {
       seed: fieldValue('gen-seed'),
       fields: collectManual(),
     });
-    if (!result.ok) throw new Error(result.error);
+    if (!result.ok) {
+      showFailure(genStatus, result.error);
+      return;
+    }
     replacedText = type === 'ACK' ? previous : null;
     restoreButton.hidden = replacedText === null;
     detachFile();
@@ -278,7 +287,10 @@ async function saveMessage(mode) {
       mllp: document.getElementById('file-mllp').checked,
     });
     if (result.canceled) return;
-    if (!result.ok) throw new Error(result.error);
+    if (!result.ok) {
+      showFailure(fileStatus, result.error);
+      return;
+    }
     savedName = result.fileName;
     changedSinceSave = false;
     updateTitle();
@@ -330,7 +342,10 @@ async function runOpen(request) {
   try {
     const result = await request();
     if (result.canceled) return false;
-    if (!result.ok) throw new Error(result.error);
+    if (!result.ok) {
+      showFailure(fileStatus, result.error);
+      return false;
+    }
     applyOpened(result);
     return true;
   } catch (err) {
@@ -364,18 +379,6 @@ document.addEventListener('drop', (event) => {
       if (opened && dropped.length > 1) fileStatus.textContent += ' - only the first of the dropped files was opened';
     })
     .catch(console.error);
-});
-
-document.addEventListener('keydown', (event) => {
-  if (!(event.ctrlKey || event.metaKey)) return;
-  const key = event.key.toLowerCase();
-  if (key === 's') {
-    event.preventDefault();
-    saveMessage(event.shiftKey ? 'saveAs' : 'save').catch(console.error);
-  } else if (key === 'o') {
-    event.preventDefault();
-    openFromDialog().catch(console.error);
-  }
 });
 
 /* ---- bulk generation ---- */
@@ -454,7 +457,10 @@ async function generateBulkMessages() {
       processingId: fieldValue('gen-processing'),
       seed: fieldValue('gen-seed'),
     });
-    if (!result.ok) throw new Error(result.error);
+    if (!result.ok) {
+      showFailure(bulkStatus, result.error);
+      return;
+    }
     showBulkResult(result);
     bulkStatus.textContent = 'Done';
   } catch (err) {
@@ -479,6 +485,60 @@ document.getElementById('bulk-copy').addEventListener('click', async () => {
     status.textContent = `Could not copy: ${err.message}`;
   }
 });
+
+/* ---- exporting the list ---- */
+
+const exportBatch = document.getElementById('export-batch');
+const exportMode = document.getElementById('export-mode');
+const exportStatus = document.getElementById('export-status');
+
+// The batch header applies to files with several messages, and it cannot be combined with MLLP
+function syncExportControls() {
+  const mllp = document.getElementById('file-mllp').checked;
+  const single = exportMode.value === 'each';
+  exportBatch.disabled = mllp || single;
+  let hint = '';
+  if (mllp) hint = 'A batch header cannot be combined with MLLP';
+  else if (single) hint = 'Files with a single message get no batch header';
+  exportBatch.title = hint;
+}
+exportMode.addEventListener('change', syncExportControls);
+document.getElementById('file-mllp').addEventListener('change', syncExportControls);
+syncExportControls();
+
+window.hl7.onExportProgress(({ done, total }) => {
+  exportStatus.textContent = `Writing files: ${done} of ${total}`;
+});
+
+async function exportMessages() {
+  exportStatus.classList.remove('error');
+  exportStatus.textContent = '';
+  const button = document.getElementById('export-run');
+  button.disabled = true;
+  try {
+    const result = await window.hl7.exportMessages({
+      messages: bulkMessages.map((message) => message.text),
+      mode: exportMode.value,
+      batch: exportBatch.checked && !exportBatch.disabled,
+      lineEnding: fieldValue('file-eol'),
+      encoding: fieldValue('file-encoding'),
+      mllp: document.getElementById('file-mllp').checked,
+    });
+    if (result.canceled) return;
+    if (!result.ok) {
+      showFailure(exportStatus, result.error);
+      return;
+    }
+    exportStatus.textContent = `Exported ${plural(result.messages, 'message')} to ${plural(result.files, 'file')} in ${result.where}`;
+  } catch (err) {
+    exportStatus.classList.add('error');
+    exportStatus.textContent = err.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.getElementById('export-run').addEventListener('click', () => exportMessages().catch(console.error));
 
 buildBulkTypes();
 
@@ -637,3 +697,78 @@ document.getElementById('gen-type').addEventListener('change', updateManualVisib
 showOptionalSwitch.addEventListener('change', updateManualVisibility);
 document.getElementById('manual-clear').addEventListener('click', clearManual);
 buildManual();
+
+/* ---- remembered settings ---- */
+
+// The main process says which controls are remembered; their values are applied once
+// everything else is set up, and saved shortly after each change.
+async function setUpSettings() {
+  const { ids, controls } = await window.hl7.loadSettings();
+  const remembered = new Set(ids);
+  for (const [id, value] of Object.entries(controls)) {
+    const control = document.getElementById(id);
+    if (!control) continue;
+    if (control.type === 'checkbox') control.checked = value === true;
+    else if (typeof value === 'string' && (control.tagName !== 'SELECT' || [...control.options].some((option) => option.value === value))) control.value = value;
+    else continue;
+    control.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+  let timer = null;
+  const save = () => {
+    const current = {};
+    for (const id of remembered) {
+      const control = document.getElementById(id);
+      if (control) current[id] = control.type === 'checkbox' ? control.checked : control.value;
+    }
+    window.hl7.saveSettings(current).catch(console.error);
+  };
+  const later = (event) => {
+    if (!remembered.has(event.target.id)) return;
+    clearTimeout(timer);
+    timer = setTimeout(save, 400);
+  };
+  document.addEventListener('change', later);
+  document.addEventListener('input', later);
+}
+
+setUpSettings().catch(console.error);
+
+/* ---- File menu ---- */
+
+// The shortcuts belong to the menu (Ctrl/Cmd+N, O, S, Shift+S, E); it sends the command here.
+async function newMessage() {
+  const result = await window.hl7.newMessage();
+  if (!result.ok) return;
+  input.value = '';
+  replacedText = null;
+  restoreButton.hidden = true;
+  fileStatus.classList.remove('error');
+  fileStatus.textContent = '';
+  detachFile();
+  clearTimeout(timer);
+  run().catch(console.error);
+  input.focus();
+}
+
+function exportFromMenu() {
+  if (bulkMessages.length === 0) {
+    exportStatus.classList.add('error');
+    exportStatus.textContent = 'There is no list to export. Generate messages under Bulk generation, or open a file with several messages.';
+    document.getElementById('bulk').open = true;
+    return Promise.resolve();
+  }
+  return exportMessages();
+}
+
+const MENU_COMMANDS = {
+  new: newMessage,
+  open: openFromDialog,
+  save: () => saveMessage('save'),
+  saveAs: () => saveMessage('saveAs'),
+  export: exportFromMenu,
+};
+
+window.hl7.onMenuCommand((command) => {
+  const action = Object.hasOwn(MENU_COMMANDS, command) ? MENU_COMMANDS[command] : null;
+  if (action) action().catch(console.error);
+});

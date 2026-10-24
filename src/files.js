@@ -6,8 +6,10 @@
  */
 
 const fs = require('node:fs/promises');
+const nodePath = require('node:path');
 const { parseMessage, splitMessages, get } = require('./hl7/parser');
 const { patientLabel } = require('./hl7/bulk');
+const { timestamp } = require('./hl7/generator');
 const { messageTypeLabel } = require('./hl7/dictionary');
 
 const LINE_ENDINGS = { cr: '\r', lf: '\n', crlf: '\r\n' };
@@ -140,6 +142,118 @@ function readMessages(buffer) {
   };
 }
 
+/* ---- exporting several messages ---- */
+
+const EXPORT_MODES = new Set(['one', 'each', 'type']);
+const MAX_EXPORT_FILES = 10000;
+const MAX_EXPORT_BYTES = 200 * 1024 * 1024;
+
+const safeName = (text) => text.replaceAll(/[^\w.-]/g, '_').slice(0, 80);
+
+/** Gives each name a number when an earlier file already has it. */
+function uniqueNames(names) {
+  const seen = new Map();
+  return names.map((name) => {
+    const count = (seen.get(name) ?? 0) + 1;
+    seen.set(name, count);
+    if (count === 1) return name;
+    const dot = name.lastIndexOf('.');
+    return `${name.slice(0, dot)}_${count}${name.slice(dot)}`;
+  });
+}
+
+/**
+ * Which files an export writes: [{ fileName, texts }].
+ *  one  - all messages in one file
+ *  each - one file per message, numbered so that they stay in order
+ *  type - one file per message type (ADT^A01, ORU^R01, ...)
+ */
+function planExport(texts, { mode = 'one', now = new Date() } = {}) {
+  if (!Array.isArray(texts) || texts.some((text) => typeof text !== 'string')) throw new TypeError('The messages must be a list of text.');
+  const messages = texts.filter((text) => text.trim() !== '');
+  if (messages.length === 0) throw new Error('There are no messages to export.');
+  if (!EXPORT_MODES.has(mode)) throw new Error(`Unknown export mode: ${mode}`);
+  if (mode === 'one') return [{ fileName: `messages_${messages.length}_${timestamp(now)}.hl7`, texts: messages }];
+  if (mode === 'each') {
+    if (messages.length > MAX_EXPORT_FILES) {
+      throw new Error(`That would be more than ${MAX_EXPORT_FILES} files. Choose "One file" or "One file per message type" instead.`);
+    }
+    const width = String(messages.length).length;
+    return messages.map((text, i) => {
+      const { type, controlId } = describeMessage(text);
+      return { fileName: `${String(i + 1).padStart(width, '0')}_${safeName([type, controlId].filter(Boolean).join('_')) || 'message'}.hl7`, texts: [text] };
+    });
+  }
+  const groups = new Map();
+  for (const text of messages) {
+    const type = describeMessage(text).type;
+    if (!groups.has(type)) groups.set(type, []);
+    groups.get(type).push(text);
+  }
+  const names = uniqueNames([...groups.keys()].map((type) => `${safeName(type) || 'other'}.hl7`));
+  return [...groups.values()].map((group, i) => ({ fileName: names[i], texts: group }));
+}
+
+/** FHS/BHS before and BTS/FTS after the messages (the HL7 batch file protocol). */
+function batchEnvelope(texts, fileName, now) {
+  const first = parseMessage(texts[0]);
+  const parties = [get(first, 'MSH-3.1'), get(first, 'MSH-4.1'), get(first, 'MSH-5.1'), get(first, 'MSH-6.1')];
+  const stamp = timestamp(now);
+  const header = [
+    ['FHS', String.raw`^~\&`, ...parties, stamp, '', fileName, '', `FILE${stamp}`],
+    ['BHS', String.raw`^~\&`, ...parties, stamp, '', '', '', `BATCH${stamp}`],
+  ];
+  const trailer = [['BTS', String(texts.length)], ['FTS', '1']];
+  return { header: header.map((fields) => fields.join('|')), trailer: trailer.map((fields) => fields.join('|')) };
+}
+
+/** The bytes of one export file. A batch header and MLLP framing do not go together: batches are for files, MLLP for the network. */
+function prepareExport(texts, { lineEnding = 'cr', encoding = 'utf-8', mllp = false, batch = false, fileName = 'messages.hl7', now = new Date() } = {}) {
+  if (!Array.isArray(texts) || texts.length === 0) throw new Error('There are no messages to export.');
+  if (batch && mllp) throw new Error('A batch file and MLLP framing cannot be combined. Switch one of them off.');
+  if (!Object.hasOwn(LINE_ENDINGS, lineEnding)) throw new Error(`Unknown line ending: ${lineEnding}`);
+  if (!ENCODINGS.has(encoding)) throw new Error(`Unknown encoding: ${encoding}`);
+  const eol = LINE_ENDINGS[lineEnding];
+  const bodies = texts.map((text) => normalizeLineEndings(text, lineEnding)).filter((body) => body !== '');
+  if (bodies.length === 0) throw new Error('There are no messages to export.');
+  let parts = mllp ? bodies.map((body) => `${MLLP_START}${body}${MLLP_END}`) : bodies;
+  if (batch) {
+    const { header, trailer } = batchEnvelope(texts, fileName, now);
+    parts = [...header.map((line) => line + eol), ...bodies, ...trailer.map((line) => line + eol)];
+  }
+  const data = encodeText(parts.join(''), encoding);
+  if (data.length > MAX_BYTES) throw new Error('The export file would be too large.');
+  return { data, count: bodies.length };
+}
+
+/** The bytes of every file of the plan, before anything is written, so a problem (such as a character Windows-1252 cannot hold) stops the export before the first file. */
+function prepareExportFiles(plan, options) {
+  const prepared = plan.map((file) => ({ fileName: file.fileName, data: prepareExport(file.texts, { ...options, fileName: file.fileName }).data }));
+  const total = prepared.reduce((sum, file) => sum + file.data.length, 0);
+  if (total > MAX_EXPORT_BYTES) throw new Error('The export would be too large.');
+  return prepared;
+}
+
+/** Names from the prepared files that already exist in the folder. */
+async function existingFiles(folder, prepared) {
+  const checks = await Promise.all(prepared.map(({ fileName }) => fs.access(nodePath.join(folder, fileName)).then(() => true, () => false)));
+  return prepared.filter((_file, i) => checks[i]).map((file) => file.fileName);
+}
+
+/** Writes the prepared files into the folder, one after the other; onProgress(done, total) is called as it goes. */
+async function writeExport(folder, prepared, onProgress = () => {}) {
+  let bytes = 0;
+  let done = 0;
+  // a chain of promises instead of await in a loop: the files must be written in order, not all at once
+  await prepared.reduce((previous, file) => previous.then(async () => {
+    await fs.writeFile(nodePath.join(folder, file.fileName), file.data);
+    bytes += file.data.length;
+    done += 1;
+    onProgress(done, prepared.length);
+  }), Promise.resolve());
+  return { files: prepared.length, bytes };
+}
+
 async function readFile(path) {
   const stat = await fs.stat(path);
   if (stat.size > MAX_BYTES) throw new Error('The file is too large to open.');
@@ -151,5 +265,6 @@ async function writeFile(path, data) {
 }
 
 module.exports = {
-  prepareFile, suggestFileName, normalizeLineEndings, encodeText, decodeBuffer, readMessages, readFile, writeFile, LINE_ENDINGS, ENCODINGS,
+  prepareFile, suggestFileName, normalizeLineEndings, encodeText, decodeBuffer, readMessages, readFile, writeFile,
+  planExport, prepareExport, prepareExportFiles, existingFiles, writeExport, describeMessage, LINE_ENDINGS, ENCODINGS, EXPORT_MODES,
 };
