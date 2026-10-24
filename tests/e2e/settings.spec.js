@@ -1,5 +1,5 @@
 const { test, expect, _electron: electron } = require('@playwright/test');
-const { waitForWindow, setFileOptions } = require('./helpers');
+const { waitForWindow, setFileOptions, goTo } = require('./helpers');
 
 test.describe('Settings', () => {
   let electronApp;
@@ -49,9 +49,9 @@ test.describe('Settings', () => {
     expect(sendingApp).toBe('HIS');
   });
 
-  test('shows default sending facility as MAINHOSP', async () => {
+  test('shows default sending facility as SENDHOSP', async () => {
     const sendingFac = await window.locator('#gen-send-fac').inputValue();
-    expect(sendingFac).toBe('MAINHOSP');
+    expect(sendingFac).toBe('SENDHOSP');
   });
 
   test('shows default receiving application as EHR', async () => {
@@ -59,9 +59,9 @@ test.describe('Settings', () => {
     expect(receivingApp).toBe('EHR');
   });
 
-  test('shows default receiving facility as MAINHOSP', async () => {
+  test('shows default receiving facility as GETHOSP', async () => {
     const receivingFac = await window.locator('#gen-recv-fac').inputValue();
-    expect(receivingFac).toBe('MAINHOSP');
+    expect(receivingFac).toBe('GETHOSP');
   });
 
   test('shows all HL7 versions in dropdown', async () => {
@@ -92,6 +92,7 @@ test.describe('Settings', () => {
   });
 
   test('changes line ending setting persists', async () => {
+    await goTo(window, 'settings');
     await window.selectOption('#file-eol', 'lf');
     const eolValue = await window.locator('#file-eol').inputValue();
     expect(eolValue).toBe('lf');
@@ -103,6 +104,7 @@ test.describe('Settings', () => {
   });
 
   test('changes encoding setting persists', async () => {
+    await goTo(window, 'settings');
     await window.selectOption('#file-encoding', 'windows-1252');
     const encodingValue = await window.locator('#file-encoding').inputValue();
     expect(encodingValue).toBe('windows-1252');

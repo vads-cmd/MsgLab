@@ -16,7 +16,7 @@ test.describe('UI Navigation', () => {
 
   test('shows app title', async () => {
     const title = await window.locator('h1').textContent();
-    expect(title).toBe('HL7 Workbench');
+    expect(title).toBe('MsgLab');
   });
 
   test('shows message textarea', async () => {

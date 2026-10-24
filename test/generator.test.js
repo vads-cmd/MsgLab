@@ -498,7 +498,7 @@ test('values that are wrong on purpose are passed on as typed, so errors can be 
 
 test('event-specific values: prior location for A02, times for A02 and A03', () => {
   const a02 = parse(base({ type: 'ADT^A02', fields: { priorUnit: 'ER', priorRoom: '12', priorBed: 'B', admitTime: '20261020080000' } }));
-  assert.strictEqual(get(a02, 'PV1-6'), 'ER^12^B^MAINHOSP');
+  assert.strictEqual(get(a02, 'PV1-6'), 'ER^12^B^SENDHOSP');
   assert.strictEqual(get(a02, 'PV1-44'), '20261020080000');
   const noPrior = parse(base({ type: 'ADT^A02', fields: { priorUnit: null, priorRoom: null, priorBed: null } }));
   assert.strictEqual(get(noPrior, 'PV1-6'), '');

@@ -2,19 +2,69 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HL7 Workbench</title>
+  <title>MsgLab</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<div class="app">
   <header class="app-header">
-    <h1>HL7 Workbench</h1>
+    <img class="app-logo" data-testid="app-logo" src="assets/app-icon.png" alt="">
+    <h1 data-testid="app-title">MsgLab</h1>
   </header>
 
-  <form id="generator" class="generator" autocomplete="off">
-    <label>Message type
-      <select id="gen-type"><option value="ADT^A01">ADT^A01 - Admit/Visit Notification</option>
+  <nav class="sidebar" data-testid="sidebar" aria-label="Main">
+    <button type="button" class="nav-item active" id="nav-editor" data-testid="nav-editor" data-view="editor" aria-current="page"><span class="icon icon-validation" data-testid="nav-editor-icon" aria-hidden="true"></span><span class="nav-label" data-testid="nav-editor-label">Editor</span></button>
+    <button type="button" class="nav-item" id="nav-generate" data-testid="nav-generate" data-view="generate"><span class="icon icon-generate" data-testid="nav-generate-icon" aria-hidden="true"></span><span class="nav-label" data-testid="nav-generate-label">Generate</span></button>
+    <button type="button" class="nav-item" id="nav-bulk" data-testid="nav-bulk" data-view="bulk"><span class="icon icon-bulk" data-testid="nav-bulk-icon" aria-hidden="true"></span><span class="nav-label" data-testid="nav-bulk-label">Bulk</span></button>
+    <button type="button" class="nav-item" id="nav-send" data-testid="nav-send" data-view="send" disabled title="Sending comes in a later step"><span class="icon icon-sending" data-testid="nav-send-icon" aria-hidden="true"></span><span class="nav-label" data-testid="nav-send-label">Send</span></button>
+    <span class="nav-spacer"></span>
+    <button type="button" class="nav-item" id="nav-settings" data-testid="nav-settings" data-view="settings"><span class="icon icon-settings" data-testid="nav-settings-icon" aria-hidden="true"></span><span class="nav-label" data-testid="nav-settings-label">Settings</span></button>
+  </nav>
+
+  <main class="content" data-testid="content">
+    <section class="view" id="view-editor" data-testid="view-editor">
+      <div class="panes" data-testid="editor-panes">
+        <section class="pane" data-testid="message-pane">
+          <h2 class="pane-title" data-testid="message-title"><label for="message" data-testid="message-label">Message</label><span id="message-name" data-testid="message-name" class="message-name"></span></h2>
+          <div class="file-bar" data-testid="editor-toolbar">
+            <button type="button" id="file-open" data-testid="file-open">Open...</button>
+            <button type="button" id="file-save" data-testid="file-save">Save</button>
+            <button type="button" id="file-save-as" data-testid="file-save-as">Save as...</button>
+            <button type="button" id="gen-restore" data-testid="gen-restore" class="quiet gen-restore" hidden>Restore the original message</button>
+            <span class="toolbar-spacer"></span>
+            <button type="button" id="file-format" data-testid="file-format" class="quiet" title="Line ending, encoding and MLLP: change in Settings">CR - UTF-8</button>
+          </div>
+          <textarea id="message" data-testid="message" spellcheck="false"
+            placeholder="Paste or type an HL7 message here, for example:&#10;MSH|^~\&amp;|SENDER|FACILITY|RECEIVER|FACILITY|20261023120000||ADT^A01|MSG0001|T|2.5.1&#10;PID|1||12345^^^HOSP^MR||DOE^JOHN||19800412|M"></textarea>
+          <div class="statusbar" data-testid="editor-statusbar">
+            <output id="file-status" data-testid="file-status" class="gen-status"></output>
+            <span id="message-stats" data-testid="message-stats" class="message-stats"></span>
+          </div>
+        </section>
+
+        <section class="pane" data-testid="result-pane">
+          <div class="tabs" role="tablist" data-testid="result-tabs">
+            <button class="tab active" role="tab" id="tab-validation" data-testid="tab-validation" data-tab="validation" aria-selected="true" aria-controls="panel-validation">Validation</button>
+            <button class="tab" role="tab" id="tab-explain" data-testid="tab-explain" data-tab="explain" aria-selected="false" aria-controls="panel-explain">Explain</button>
+          </div>
+          <div id="panel-validation" data-testid="panel-validation" class="output" role="tabpanel" aria-labelledby="tab-validation"></div>
+          <div id="panel-explain" data-testid="panel-explain" class="output" role="tabpanel" aria-labelledby="tab-explain" hidden></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="view" id="view-generate" data-testid="view-generate" hidden>
+      <h2 class="view-title" data-testid="generate-title">Generate a message</h2>
+      <form id="generator" data-testid="generator" class="generate-form" autocomplete="off">
+        <fieldset class="card-group" data-testid="generate-card-message">
+          <legend data-testid="generate-card-message-title">Message</legend>
+          <div class="gen-grid">
+            <div class="field wide" data-testid="gen-type-field">
+              <label for="gen-type" data-testid="gen-type-label">Message type</label>
+              <span class="select-with-star" data-testid="gen-type-row">
+                <select id="gen-type" data-testid="gen-type"><option value="ADT^A01">ADT^A01 - Admit/Visit Notification</option>
         <option value="ADT^A02">ADT^A02 - Transfer a Patient</option>
         <option value="ADT^A03">ADT^A03 - Discharge/End Visit</option>
         <option value="ADT^A08">ADT^A08 - Update Patient Information</option>
@@ -24,126 +74,185 @@
         <option value="ORM^O01">ORM^O01 - General Order Message</option>
         <option value="ORU^R01">ORU^R01 - Unsolicited Observation Result</option>
         <option value="ACK">ACK - Reply to the message in the editor</option></select>
-    </label>
-    <label>HL7 version
-      <select id="gen-version"><option>2.3</option><option>2.3.1</option><option>2.4</option><option>2.5</option><option selected>2.5.1</option><option>2.6</option><option>2.7</option><option>2.8</option></select>
-    </label>
-    <label>Sending application <input type="text" id="gen-send-app" value="HIS" maxlength="60"></label>
-    <label>Sending facility <input type="text" id="gen-send-fac" value="MAINHOSP" maxlength="60"></label>
-    <label>Receiving application <input type="text" id="gen-recv-app" value="EHR" maxlength="60"></label>
-    <label>Receiving facility <input type="text" id="gen-recv-fac" value="MAINHOSP" maxlength="60"></label>
-    <label>Processing
-      <select id="gen-processing">
-        <option value="T" selected>T - Training/test</option>
-        <option value="P">P - Production</option>
-        <option value="D">D - Debugging</option>
+                <button type="button" id="gen-fav" data-testid="gen-fav" class="star" aria-pressed="false" aria-label="Add to favorites" title="Add to favorites">&#9734;</button>
+              </span>
+            </div>
+            <label data-testid="gen-version-label">HL7 version
+              <select id="gen-version" data-testid="gen-version"><option>2.3</option><option>2.3.1</option><option>2.4</option><option>2.5</option><option selected>2.5.1</option><option>2.6</option><option>2.7</option><option>2.8</option></select>
+            </label>
+            <label data-testid="gen-processing-label">Processing
+              <select id="gen-processing" data-testid="gen-processing">
+              <option value="T" selected>T - Training/test</option>
+              <option value="P">P - Production</option>
+              <option value="D">D - Debugging</option>
       </select>
-    </label>
-    <label>Seed <input type="text" id="gen-seed" placeholder="random" maxlength="40"></label>
-    <label class="switch" title="On: every manual field is left empty. Off: every manual field is random. Fields you tick or type yourself can still be changed afterwards.">
-      <input type="checkbox" id="gen-all-empty">
-      <span>Set all fields empty</span>
-    </label>
-    <button type="submit" class="primary">Generate</button>
-    <output id="gen-status" class="gen-status"></output>
-    <button type="button" id="gen-restore" class="gen-restore" hidden>Restore the original message</button>
-  </form>
+            </label>
+          </div>
+        </fieldset>
 
-  <details id="manual" class="manual">
-    <summary>Manual values <span class="manual-hint">(optional: type a value, tick "empty" to leave a field blank, or leave both for a random value)</span></summary>
-    <div class="manual-toolbar">
-      <label class="switch" title="Off: only the mandatory fields are listed. Hidden fields keep their values and are still used.">
-        <input type="checkbox" id="manual-show-optional" checked>
+        <fieldset class="card-group" data-testid="generate-card-parties">
+          <legend data-testid="generate-card-parties-title">Sender and receiver</legend>
+          <div class="gen-grid">
+            <label data-testid="gen-send-app-label">Sending application <input type="text" id="gen-send-app" data-testid="gen-send-app" value="HIS" maxlength="60"></label>
+            <label data-testid="gen-send-fac-label">Sending facility <input type="text" id="gen-send-fac" data-testid="gen-send-fac" value="SENDHOSP" maxlength="60"></label>
+            <label data-testid="gen-recv-app-label">Receiving application <input type="text" id="gen-recv-app" data-testid="gen-recv-app" value="EHR" maxlength="60"></label>
+            <label data-testid="gen-recv-fac-label">Receiving facility <input type="text" id="gen-recv-fac" data-testid="gen-recv-fac" value="GETHOSP" maxlength="60"></label>
+          </div>
+        </fieldset>
+
+        <fieldset class="card-group" data-testid="generate-card-data">
+          <legend data-testid="generate-card-data-title">Data</legend>
+          <div class="gen-grid">
+            <label data-testid="gen-seed-label">Seed <input type="text" id="gen-seed" data-testid="gen-seed" placeholder="random" maxlength="40">
+              <span class="field-hint" data-testid="gen-seed-hint">The same seed gives the same patient, visit and doctor.</span>
+            </label>
+            <label class="switch" title="On: every manual field is left empty. Off: every manual field is random. Fields you tick or type yourself can still be changed afterwards." data-testid="gen-all-empty-label">
+              <input type="checkbox" id="gen-all-empty" data-testid="gen-all-empty">
+              <span>Set all fields empty</span>
+            </label>
+          </div>
+        </fieldset>
+
+        <details id="manual" data-testid="manual" class="manual" open>
+    <summary data-testid="manual-summary"><span class="icon icon-manual icon-sm" aria-hidden="true"></span>Manual values <span class="manual-hint" data-testid="manual-hint">(optional: type a value, tick "empty" to leave a field blank, or leave both for a random value)</span></summary>
+    <div class="manual-toolbar" data-testid="manual-toolbar">
+      <label class="switch" title="Off: only the mandatory fields are listed. Hidden fields keep their values and are still used." data-testid="manual-show-optional-label">
+        <input type="checkbox" id="manual-show-optional" data-testid="manual-show-optional" checked>
         <span>Show non-mandatory fields</span>
       </label>
-      <span id="manual-hidden-note" class="manual-note"></span>
+      <span id="manual-hidden-note" data-testid="manual-hidden-note" class="manual-note"></span>
     </div>
-    <div id="manual-fields"></div>
-    <div class="manual-actions"><button type="button" id="manual-clear">Clear manual values</button></div>
+    <div id="manual-fields" data-testid="manual-fields"></div>
+    <div class="manual-actions" data-testid="manual-actions"><button type="button" id="manual-clear" data-testid="manual-clear">Clear manual values</button></div>
   </details>
 
-  <details id="bulk" class="manual bulk">
-    <summary>Bulk generation <span class="manual-hint">(many messages at once, for filling a test database; uses the version, applications, processing and seed from above)</span></summary>
-    <form id="bulk-form" class="bulk-form" autocomplete="off">
-      <label>Number of messages <input type="number" id="bulk-count" min="1" max="5000" value="10"></label>
-      <label>Minutes between messages <input type="number" id="bulk-minutes" min="0" max="1440" value="5"></label>
-      <label>Patients
-        <select id="bulk-mode">
-          <option value="independent">A new patient for every message</option>
-          <option value="journey">Follow each patient through the chosen events</option>
-        </select>
-      </label>
-      <fieldset class="bulk-types">
-        <legend>Message types</legend>
-        <div id="bulk-types"></div>
-      </fieldset>
-      <div class="bulk-actions">
-        <button type="submit" class="primary" id="bulk-generate">Generate bulk</button>
-        <output id="bulk-status" class="gen-status"></output>
-      </div>
-    </form>
-    <div id="bulk-result" class="bulk-result" hidden>
-      <div class="bulk-result-bar">
-        <span id="bulk-summary"></span>
-        <button type="button" id="bulk-copy">Copy all messages</button>
-        <span id="bulk-copy-status" class="gen-status"></span>
-      </div>
-      <div class="bulk-result-bar">
-        <label>Export as
-          <select id="export-mode">
-            <option value="one">One file</option>
-            <option value="each">One file per message</option>
-            <option value="type">One file per message type</option>
-          </select>
-        </label>
-        <label class="file-check"><input type="checkbox" id="export-batch" checked> Batch header (FHS/BHS)</label>
-        <button type="button" id="export-run">Export...</button>
-        <output id="export-status" class="gen-status"></output>
-      </div>
-      <p class="bulk-hint">Line ending, encoding and MLLP follow the settings above the message. A batch header and MLLP cannot be combined, and only "One file" and "One file per message type" get a batch header.</p>
-      <div class="bulk-table-wrap"><table class="bulk-table">
-          <thead><tr><th>#</th><th>Type</th><th>Patient</th><th>Time</th><th>Control ID</th><th>Message</th></tr></thead>
-          <tbody id="bulk-rows"></tbody>
-        </table></div>
-    </div>
-  </details>
-
-  <main class="panes">
-    <section class="pane">
-      <h2><label for="message">Message</label></h2>
-      <div class="file-bar">
-        <button type="button" id="file-open">Open...</button>
-        <button type="button" id="file-save">Save</button>
-        <button type="button" id="file-save-as">Save as...</button>
-        <label>Line ending
-          <select id="file-eol">
-            <option value="cr" selected>CR (HL7 standard)</option>
-            <option value="lf">LF</option>
-            <option value="crlf">CRLF</option>
-          </select>
-        </label>
-        <label>Encoding
-          <select id="file-encoding">
-            <option value="utf-8" selected>UTF-8</option>
-            <option value="windows-1252">Windows-1252</option>
-          </select>
-        </label>
-        <label class="file-check"><input type="checkbox" id="file-mllp"> Wrap in MLLP</label>
-        <output id="file-status" class="gen-status"></output>
-      </div>
-      <textarea id="message" spellcheck="false"
-        placeholder="Paste or type an HL7 message here, for example:&#10;MSH|^~\&amp;|SENDER|FACILITY|RECEIVER|FACILITY|20261023120000||ADT^A01|MSG0001|T|2.5.1&#10;PID|1||12345^^^HOSP^MR||DOE^JOHN||19800412|M"></textarea>
+        <div class="action-bar" data-testid="gen-action-bar">
+          <button type="submit" class="primary" data-testid="gen-submit">Generate</button>
+          <output id="gen-status" data-testid="gen-status" class="gen-status"></output>
+          <span class="action-hint" data-testid="gen-hint">The new message opens in the Editor.</span>
+        </div>
+      </form>
     </section>
 
-    <section class="pane">
-      <div class="tabs" role="tablist">
-        <button class="tab active" role="tab" id="tab-validation" data-tab="validation" aria-selected="true" aria-controls="panel-validation">Validation</button>
-        <button class="tab" role="tab" id="tab-explain" data-tab="explain" aria-selected="false" aria-controls="panel-explain">Explain</button>
+    <section class="view" id="view-bulk" data-testid="view-bulk" hidden>
+      <h2 class="view-title" data-testid="bulk-title">Bulk generation</h2>
+      <p class="view-hint" data-testid="bulk-intro">Many messages at once, for filling a test database. The version, applications, processing and seed come from the Generate view.</p>
+      <div id="bulk" data-testid="bulk" class="bulk-view">
+        <form id="bulk-form" data-testid="bulk-form" class="bulk-form" autocomplete="off">
+          <fieldset class="card-group" data-testid="bulk-card-settings">
+            <legend data-testid="bulk-card-settings-title">Settings</legend>
+            <div class="gen-grid" data-testid="bulk-settings-grid">
+              <label data-testid="bulk-count-label">Number of messages <input type="number" id="bulk-count" data-testid="bulk-count" min="1" max="5000" value="10"></label>
+              <label data-testid="bulk-minutes-label">Minutes between messages <input type="number" id="bulk-minutes" data-testid="bulk-minutes" min="0" max="1440" value="5"></label>
+              <label class="wide" data-testid="bulk-mode-label">Patients
+                <select id="bulk-mode" data-testid="bulk-mode">
+                  <option value="independent">A new patient for every message</option>
+                  <option value="journey">Follow each patient through the chosen events</option>
+                </select>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="card-group" data-testid="bulk-card-types">
+            <legend data-testid="bulk-card-types-title">Message types</legend>
+            <div class="types-tools" data-testid="bulk-types-tools">
+              <button type="button" id="bulk-types-all" data-testid="bulk-types-all" class="quiet">Select all</button>
+              <button type="button" id="bulk-types-none" data-testid="bulk-types-none" class="quiet">Select none</button>
+              <button type="button" id="bulk-types-favs" data-testid="bulk-types-favs" class="quiet">Favorites only</button>
+            </div>
+            <div id="bulk-types" data-testid="bulk-types"></div>
+          </fieldset>
+
+          <div class="bulk-actions" data-testid="bulk-actions">
+            <button type="submit" class="primary" id="bulk-generate" data-testid="bulk-generate">Generate bulk</button>
+            <output id="bulk-status" data-testid="bulk-status" class="gen-status"></output>
+          </div>
+        </form>
+
+        <fieldset id="bulk-result" data-testid="bulk-result" class="card-group bulk-result" hidden>
+          <legend data-testid="bulk-result-title">Result</legend>
+          <div class="result-head" data-testid="bulk-result-head">
+            <strong id="bulk-summary" data-testid="bulk-summary"></strong>
+            <span class="toolbar-spacer"></span>
+            <span id="bulk-copy-status" data-testid="bulk-copy-status" class="gen-status"></span>
+            <button type="button" id="bulk-copy" data-testid="bulk-copy">Copy all messages</button>
+          </div>
+          <div class="export-box" data-testid="export-box">
+            <label data-testid="export-mode-label">Export as
+              <select id="export-mode" data-testid="export-mode">
+                <option value="one">One file</option>
+                <option value="each">One file per message</option>
+                <option value="type">One file per message type</option>
+              </select>
+            </label>
+            <label class="file-check" data-testid="export-batch-label"><input type="checkbox" id="export-batch" data-testid="export-batch" checked> Batch header (FHS/BHS)</label>
+            <button type="button" id="export-run" data-testid="export-run" class="primary">Export...</button>
+            <output id="export-status" data-testid="export-status" class="gen-status"></output>
+          </div>
+          <p class="bulk-hint" data-testid="bulk-hint">Line ending, encoding and MLLP follow the file format chosen in Settings. A batch header and MLLP cannot be combined, and only "One file" and "One file per message type" get a batch header.</p>
+          <div class="bulk-table-wrap" data-testid="bulk-table-wrap"><table class="bulk-table" data-testid="bulk-table">
+              <thead data-testid="bulk-table-head"><tr><th data-testid="bulk-col-num">#</th><th data-testid="bulk-col-type">Type</th><th data-testid="bulk-col-patient">Patient</th><th data-testid="bulk-col-time">Time</th><th data-testid="bulk-col-control-id">Control ID</th><th data-testid="bulk-col-message">Message</th></tr></thead>
+              <tbody id="bulk-rows" data-testid="bulk-rows"></tbody>
+            </table></div>
+        </fieldset>
       </div>
-      <div id="panel-validation" class="output" role="tabpanel" aria-labelledby="tab-validation"></div>
-      <div id="panel-explain" class="output" role="tabpanel" aria-labelledby="tab-explain" hidden></div>
+    </section>
+
+    <section class="view" id="view-settings" data-testid="view-settings" hidden>
+      <h2 class="view-title" data-testid="settings-title">Settings</h2>
+      <fieldset class="card-group" data-testid="settings-card-format">
+        <legend data-testid="settings-card-format-title">File format</legend>
+        <p class="view-hint" data-testid="settings-format-hint">Used when saving a message and when exporting the bulk list. Opening a file sets these to what the file uses.</p>
+        <div class="settings-row" data-testid="settings-format-row">
+          <label data-testid="file-eol-label">Line ending
+            <select id="file-eol" data-testid="file-eol">
+              <option value="cr" selected>CR (HL7 standard)</option>
+              <option value="lf">LF</option>
+              <option value="crlf">CRLF</option>
+            </select>
+          </label>
+          <label data-testid="file-encoding-label">Encoding
+            <select id="file-encoding" data-testid="file-encoding">
+              <option value="utf-8" selected>UTF-8</option>
+              <option value="windows-1252">Windows-1252</option>
+            </select>
+          </label>
+          <label class="file-check" data-testid="file-mllp-label"><input type="checkbox" id="file-mllp" data-testid="file-mllp"> Wrap in MLLP</label>
+        </div>
+      </fieldset>
+
+      <fieldset class="card-group" data-testid="settings-card-folders">
+        <legend data-testid="settings-card-folders-title">Default folders</legend>
+        <p class="view-hint" data-testid="settings-folders-hint">Where the Save and Export dialogs start. A folder that is not set (or no longer exists) is replaced by the folder you used last.</p>
+        <div class="folder-row" data-testid="folder-save-row">
+          <span class="folder-label" data-testid="folder-save-label">Saving a message</span>
+          <output id="folder-save" data-testid="folder-save" class="folder-path"></output>
+          <button type="button" id="folder-save-choose" data-testid="folder-save-choose">Choose...</button>
+          <button type="button" id="folder-save-clear" data-testid="folder-save-clear" class="quiet">Clear</button>
+        </div>
+        <div class="folder-row" data-testid="folder-export-row">
+          <span class="folder-label" data-testid="folder-export-label">Exporting the bulk list</span>
+          <output id="folder-export" data-testid="folder-export" class="folder-path"></output>
+          <button type="button" id="folder-export-choose" data-testid="folder-export-choose">Choose...</button>
+          <button type="button" id="folder-export-clear" data-testid="folder-export-clear" class="quiet">Clear</button>
+        </div>
+        <output id="folder-status" data-testid="folder-status" class="gen-status"></output>
+      </fieldset>
     </section>
   </main>
+</div>
+
+<dialog id="about" data-testid="about" class="about" aria-labelledby="about-name">
+  <img class="about-logo" data-testid="about-logo" src="assets/app-icon.png" alt="">
+  <h2 id="about-name" data-testid="about-name" class="about-name">MsgLab</h2>
+  <p id="about-version" data-testid="about-version" class="about-version"></p>
+  <dl class="about-facts" data-testid="about-facts">
+    <dt data-testid="about-license-label">License</dt><dd id="about-license" data-testid="about-license"></dd>
+    <dt data-testid="about-owner-label">Owner</dt><dd id="about-owner" data-testid="about-owner"></dd>
+    <dt data-testid="about-repository-label">Repository</dt><dd data-testid="about-repository-value"><a id="about-repo" data-testid="about-repo" href="https://github.com/vads-cmd/MsgLab">https://github.com/vads-cmd/MsgLab</a></dd>
+  </dl>
+  <form method="dialog" class="about-actions" data-testid="about-actions"><button class="primary" id="about-close" data-testid="about-close" autofocus>Close</button></form>
+</dialog>
 
   <script src="renderer.js"></script>
 </body>

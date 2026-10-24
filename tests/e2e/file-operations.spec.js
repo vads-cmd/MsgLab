@@ -1,5 +1,5 @@
 const { test, expect, _electron: electron } = require('@playwright/test');
-const { HL7_MESSAGES, waitForWindow, pasteMessage, setFileOptions, getMessageText } = require('./helpers');
+const { HL7_MESSAGES, waitForWindow, pasteMessage, setFileOptions, getMessageText, goTo } = require('./helpers');
 const path = require('path');
 const fs = require('fs');
 
@@ -60,11 +60,13 @@ test.describe('File Operations', () => {
   });
 
   test('shows MLLP wrap checkbox', async () => {
+    await goTo(window, 'settings');
     const mllpCheckbox = await window.locator('#file-mllp').isVisible();
     expect(mllpCheckbox).toBe(true);
   });
 
   test('changes line ending setting', async () => {
+    await goTo(window, 'settings');
     // Default should be CR
     let eolValue = await window.locator('#file-eol').inputValue();
     expect(eolValue).toBe('cr');
@@ -81,6 +83,7 @@ test.describe('File Operations', () => {
   });
 
   test('changes encoding setting', async () => {
+    await goTo(window, 'settings');
     // Default should be UTF-8
     let encodingValue = await window.locator('#file-encoding').inputValue();
     expect(encodingValue).toBe('utf-8');
@@ -92,6 +95,7 @@ test.describe('File Operations', () => {
   });
 
   test('toggles MLLP wrap option', async () => {
+    await goTo(window, 'settings');
     // Default should be unchecked
     let mllpChecked = await window.locator('#file-mllp').isChecked();
     expect(mllpChecked).toBe(false);
@@ -133,6 +137,7 @@ test.describe('File Operations', () => {
   });
 
   test('file options are accessible', async () => {
+    await goTo(window, 'settings');
     // All file options should be visible
     const eolVisible = await window.locator('#file-eol').isVisible();
     expect(eolVisible).toBe(true);

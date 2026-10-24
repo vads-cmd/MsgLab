@@ -43,3 +43,16 @@ test('macOS gets an app menu first and Close instead of Quit in File', () => {
   const last = template.find((m) => m.label === 'File').submenu.at(-1);
   assert.strictEqual(last.role, 'close');
 });
+
+test('Help has About, which sends the "about" command (the app menu has it on macOS)', () => {
+  const win = build();
+  const help = win.template.find((m) => m.label === 'Help');
+  assert.strictEqual(help.submenu[0].label, 'About HL7 Workbench');
+  help.submenu[0].click();
+  assert.deepStrictEqual(win.sent, ['about']);
+
+  const mac = build({ isMac: true });
+  assert.ok(!mac.template.some((m) => m.label === 'Help'));
+  mac.template[0].submenu[0].click();
+  assert.deepStrictEqual(mac.sent, ['about']);
+});

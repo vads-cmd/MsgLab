@@ -21,6 +21,21 @@ function el(tag, className, text) {
   return node;
 }
 
+// Gives an element a stable test id (data-testid) so end-to-end tests can find it
+function tid(node, id) {
+  node.dataset.testid = id;
+  return node;
+}
+
+function idPart(text) {
+  const dashed = String(text).replaceAll(/[^\w-]+/g, '-');
+  let start = 0;
+  let end = dashed.length;
+  while (start < end && dashed[start] === '-') start += 1;
+  while (end > start && dashed[end - 1] === '-') end -= 1;
+  return dashed.slice(start, end);
+}
+
 function plural(n, word) {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
@@ -42,7 +57,7 @@ function setValidationLabel(problems) {
 
 function showPlaceholders() {
   for (const name of Object.keys(panels)) {
-    panels[name].replaceChildren(el('p', 'placeholder', PLACEHOLDERS[name]));
+    panels[name].replaceChildren(tid(el('p', 'placeholder', PLACEHOLDERS[name]), `${name}-placeholder`));
   }
   setValidationLabel(0);
 }
@@ -52,27 +67,28 @@ function showPlaceholders() {
 function renderValidation(result) {
   const children = [];
 
-  const summary = el('div', 'summary');
-  summary.append(el('span', `badge ${result.valid ? 'ok' : 'bad'}`, result.valid ? 'Valid' : 'Not valid'));
+  const summary = tid(el('div', 'summary'), 'validation-summary');
+  summary.append(tid(el('span', `badge ${result.valid ? 'ok' : 'bad'}`, result.valid ? 'Valid' : 'Not valid'), 'validation-badge'));
   const parts = [plural(result.counts.error, 'error'), plural(result.counts.warning, 'warning')];
   if (result.counts.info) parts.push(plural(result.counts.info, 'note'));
   if (result.messageType) parts.unshift(result.messageType);
-  summary.append(el('span', 'summary-text', parts.join(' · ')));
+  summary.append(tid(el('span', 'summary-text', parts.join(' · ')), 'validation-summary-text'));
   children.push(summary);
 
   if (result.issues.length === 0) {
-    children.push(el('p', 'placeholder', 'No problems found.'));
+    children.push(tid(el('p', 'placeholder', 'No problems found.'), 'validation-empty'));
   } else {
-    const list = el('ul', 'issues');
-    for (const issue of result.issues) {
-      const item = el('li', `issue ${issue.severity}`);
-      item.append(el('span', 'severity', issue.severity));
-      const body = el('div', 'issue-body');
-      body.append(el('div', 'issue-message', issue.message));
-      body.append(el('div', 'issue-where', [issue.path, `line ${issue.line}`].filter(Boolean).join(' · ')));
+    const list = tid(el('ul', 'issues'), 'validation-issues');
+    result.issues.forEach((issue, index) => {
+      const name = `validation-issue-${index + 1}`;
+      const item = tid(el('li', `issue ${issue.severity}`), name);
+      item.append(tid(el('span', 'severity', issue.severity), `${name}-severity`));
+      const body = tid(el('div', 'issue-body'), `${name}-body`);
+      body.append(tid(el('div', 'issue-message', issue.message), `${name}-message`));
+      body.append(tid(el('div', 'issue-where', [issue.path, `line ${issue.line}`].filter(Boolean).join(' · ')), `${name}-where`));
       item.append(body);
       list.append(item);
-    }
+    });
     children.push(list);
   }
 
@@ -82,12 +98,14 @@ function renderValidation(result) {
 
 /* ---- explain tab ---- */
 
-function renderChips(field) {
-  const comps = el('div', 'f-comps');
+function renderChips(field, prefix) {
+  const comps = tid(el('div', 'f-comps'), `${prefix}-chips`);
+  let count = 0;
   for (const rep of field.reps) {
     for (const c of rep.components) {
-      const chip = el('span', 'chip');
-      chip.append(el('span', 'chip-name', c.name || `#${c.n}`));
+      count += 1;
+      const chip = tid(el('span', 'chip'), `${prefix}-chip-${count}`);
+      chip.append(tid(el('span', 'chip-name', c.name || `#${c.n}`), `${prefix}-chip-${count}-name`));
       chip.append(document.createTextNode(c.decoded ? ` ${c.value} (${c.decoded})` : ` ${c.value}`));
       comps.append(chip);
     }
@@ -95,54 +113,67 @@ function renderChips(field) {
   return comps;
 }
 
-function renderFieldRow(field) {
-  const row = el('tr');
-  row.append(el('td', 'f-path', field.path), el('td', 'f-name', field.name));
+function renderFieldRow(field, segmentNumber) {
+  const prefix = `explain-segment-${segmentNumber}-field-${idPart(field.path)}`;
+  const row = tid(el('tr'), prefix);
+  row.append(tid(el('td', 'f-path', field.path), `${prefix}-path`), tid(el('td', 'f-name', field.name), `${prefix}-name`));
 
-  const value = el('td', 'f-value');
-  value.append(el('div', 'f-display', field.display));
-  if (field.reps.some((rep) => rep.components.length > 1)) value.append(renderChips(field));
-  row.append(value, el('td', 'f-type', field.dt));
+  const value = tid(el('td', 'f-value'), `${prefix}-value`);
+  value.append(tid(el('div', 'f-display', field.display), `${prefix}-display`));
+  if (field.reps.some((rep) => rep.components.length > 1)) value.append(renderChips(field, prefix));
+  row.append(value, tid(el('td', 'f-type', field.dt), `${prefix}-type`));
   return row;
 }
 
-function renderSegment(seg) {
-  const details = el('details', 'segment');
+function renderSegment(seg, number) {
+  const prefix = `explain-segment-${number}`;
+  const details = tid(el('details', 'segment'), prefix);
   details.open = true;
-  const summary = el('summary');
-  summary.append(el('span', 'seg-name', seg.name), el('span', 'seg-desc', seg.description));
+  const summary = tid(el('summary'), `${prefix}-summary`);
+  summary.append(tid(el('span', 'seg-name', seg.name), `${prefix}-name`), tid(el('span', 'seg-desc', seg.description), `${prefix}-desc`));
   details.append(summary);
 
   if (seg.fields.length === 0) {
-    details.append(el('p', 'placeholder', seg.known ? 'No values in this segment.' : 'This segment is not in the built-in dictionary.'));
+    details.append(tid(el('p', 'placeholder', seg.known ? 'No values in this segment.' : 'This segment is not in the built-in dictionary.'), `${prefix}-note`));
     return details;
   }
 
-  const table = el('table', 'fields');
-  for (const field of seg.fields) table.append(renderFieldRow(field));
+  const table = tid(el('table', 'fields'), `${prefix}-fields`);
+  for (const field of seg.fields) table.append(renderFieldRow(field, number));
   details.append(table);
   return details;
 }
 
 function renderExplain(result) {
   if (result.empty) {
-    panels.explain.replaceChildren(el('p', 'placeholder', PLACEHOLDERS.explain));
+    panels.explain.replaceChildren(tid(el('p', 'placeholder', PLACEHOLDERS.explain), 'explain-placeholder'));
     return;
   }
   const children = [];
-  if (result.narrative) children.push(el('p', 'narrative', result.narrative));
+  if (result.narrative) children.push(tid(el('p', 'narrative', result.narrative), 'explain-narrative'));
   if (result.facts.length) {
-    const list = el('dl', 'facts');
-    for (const fact of result.facts) list.append(el('dt', '', fact.label), el('dd', '', fact.value));
+    const list = tid(el('dl', 'facts'), 'explain-facts');
+    result.facts.forEach((fact, index) => {
+      const name = `explain-fact-${index + 1}`;
+      list.append(tid(el('dt', '', fact.label), `${name}-label`), tid(el('dd', '', fact.value), `${name}-value`));
+    });
     children.push(list);
   }
-  for (const seg of result.segments) children.push(renderSegment(seg));
+  result.segments.forEach((seg, index) => children.push(renderSegment(seg, index + 1)));
   panels.explain.replaceChildren(...children);
 }
 
 /* ---- wiring ---- */
 
+// "4 segments - 212 characters" under the message
+function updateStats() {
+  const text = input.value;
+  const segments = text.split(/\r\n|\r|\n/).filter((line) => line.trim() !== '').length;
+  document.getElementById('message-stats').textContent = segments === 0 ? '' : `${plural(segments, 'segment')} - ${plural(text.length, 'character')}`;
+}
+
 async function run() {
+  updateStats();
   const text = input.value;
   if (text.trim() === '') {
     latestRequest++;
@@ -158,7 +189,7 @@ async function run() {
   } catch (err) {
     if (request !== latestRequest) return;
     for (const name of Object.keys(panels)) {
-      panels[name].replaceChildren(el('p', 'placeholder', `Something went wrong: ${err.message}`));
+      panels[name].replaceChildren(tid(el('p', 'placeholder', `Something went wrong: ${err.message}`), `${name}-error`));
     }
   }
 }
@@ -216,6 +247,9 @@ async function generateMessage() {
     input.scrollTop = 0;
     const manualNote = result.manual.length ? ` · ${plural(result.manual.length, 'manual value')}` : '';
     genStatus.textContent = `Generated ${result.type} (v${result.version}) · seed ${result.seed}${manualNote}`;
+    fileStatus.classList.remove('error');
+    fileStatus.textContent = genStatus.textContent;
+    showView('editor');
     clearTimeout(timer);
     run().catch(console.error);
   } catch (err) {
@@ -248,7 +282,12 @@ let changedSinceSave = false;
 
 function updateTitle() {
   const name = savedName ? `${savedName} - ` : '';
-  document.title = `${changedSinceSave && savedName ? '* ' : ''}${name}HL7 Workbench`;
+  document.title = `${changedSinceSave && savedName ? '* ' : ''}${name}MsgLab`;
+  // the same in the pane title: the file name, and a note while it has changes that were not saved
+  const label = document.getElementById('message-name');
+  const note = changedSinceSave ? ' (not saved)' : '';
+  label.textContent = savedName ? `${savedName}${note}` : '';
+  label.classList.toggle('changed', changedSinceSave && savedName !== '');
 }
 
 // The main process asks before a window with unsaved changes is closed or its text replaced
@@ -313,6 +352,8 @@ function applyOpened(result) {
   if (format.lineEnding) document.getElementById('file-eol').value = format.lineEnding;
   document.getElementById('file-encoding').value = format.encoding;
   document.getElementById('file-mllp').checked = format.mllp;
+  updateFormatSummary();
+  showView('editor');
   replacedText = null;
   restoreButton.hidden = true;
   input.value = messages[0].text;
@@ -320,7 +361,6 @@ function applyOpened(result) {
   const many = messages.length > 1;
   if (many) {
     showBulkResult({ summary: `${result.fileName}: ${plural(messages.length, 'message')}${result.batch ? ' (batch file)' : ''}`, messages });
-    document.getElementById('bulk').open = true;
   }
   if (result.tied) {
     savedName = result.fileName;
@@ -330,7 +370,7 @@ function applyOpened(result) {
   } else {
     detachFile();
   }
-  const listed = many ? ` - ${plural(messages.length, 'message')}, listed under Bulk generation; the first one is shown` : '';
+  const listed = many ? ` - ${plural(messages.length, 'message')}, listed in the Bulk view; the first one is shown` : '';
   fileStatus.textContent = ['Opened ', result.fileName, listed, ...notes.map((note) => ` - ${note}`)].join('');
   clearTimeout(timer);
   run().catch(console.error);
@@ -389,19 +429,96 @@ const bulkResult = document.getElementById('bulk-result');
 const SHOWN_ROWS = 200; // the table lists the first rows only; "Copy all" always copies everything
 let bulkMessages = [];
 
+/* ---- favourite message types ---- */
+
+// The list of types comes from the page; the dropdown is rebuilt from it with the favourites on top,
+// and the other types grouped by family (ADT, ORM, ORU ...), so a long list stays easy to scan.
+const typeSelect = document.getElementById('gen-type');
+const favButton = document.getElementById('gen-fav');
+const ALL_TYPES = Array.from(typeSelect.options, (option) => ({ value: option.value, text: option.textContent }));
+const FAMILY_LABELS = { ADT: 'ADT - Patient administration', ORM: 'ORM - Orders', ORU: 'ORU - Observation results', ACK: 'ACK - Acknowledgements' };
+let favorites = [];
+
+const familyOf = (value) => value.split('^')[0];
+
+function typeGroups() {
+  const favs = ALL_TYPES.filter((type) => favorites.includes(type.value));
+  const rest = ALL_TYPES.filter((type) => !favorites.includes(type.value));
+  const groups = favs.length > 0 ? [['\u2605 Favorites', favs]] : [];
+  for (const family of new Set(rest.map((type) => familyOf(type.value)))) {
+    groups.push([FAMILY_LABELS[family] ?? family, rest.filter((type) => familyOf(type.value) === family)]);
+  }
+  return groups;
+}
+
+function updateFavoriteButton() {
+  const on = favorites.includes(typeSelect.value);
+  const label = on ? 'Remove from favorites' : 'Add to favorites';
+  favButton.textContent = on ? '\u2605' : '\u2606';
+  favButton.setAttribute('aria-pressed', String(on));
+  favButton.setAttribute('aria-label', label);
+  favButton.title = label;
+  favButton.classList.toggle('on', on);
+}
+
+function renderTypeOptions() {
+  const current = typeSelect.value;
+  typeSelect.replaceChildren(...typeGroups().map(([label, types]) => {
+    const group = tid(el('optgroup'), `gen-type-group-${idPart(label)}`);
+    group.label = label;
+    group.append(...types.map((type) => {
+      const option = tid(el('option', '', type.text), `gen-type-option-${idPart(type.value)}`);
+      option.value = type.value;
+      return option;
+    }));
+    return group;
+  }));
+  typeSelect.value = current;
+  updateFavoriteButton();
+  buildBulkTypes();
+}
+
+function setFavorites(list) {
+  favorites = list.filter((value) => ALL_TYPES.some((type) => type.value === value));
+  renderTypeOptions();
+}
+
+favButton.addEventListener('click', () => {
+  const value = typeSelect.value;
+  favorites = favorites.includes(value) ? favorites.filter((item) => item !== value) : [...favorites, value];
+  renderTypeOptions();
+  window.hl7.setFavorites(favorites).catch(console.error);
+});
+typeSelect.addEventListener('change', updateFavoriteButton);
+
+// The bulk list shows the favourites first; ticks are kept when the list is rebuilt
 function buildBulkTypes() {
   const box = document.getElementById('bulk-types');
-  for (const option of document.getElementById('gen-type').options) {
-    if (option.value === 'ACK') continue; // an ACK answers one given message
-    const label = el('label');
-    const check = el('input');
+  const first = box.children.length === 0;
+  const ticked = new Set(Array.from(box.querySelectorAll('input:checked'), (check) => check.value));
+  const types = ALL_TYPES.filter((type) => type.value !== 'ACK'); // an ACK answers one given message
+  types.sort((a, b) => Number(favorites.includes(b.value)) - Number(favorites.includes(a.value)));
+  box.replaceChildren(...types.map((type) => {
+    const name = `bulk-type-${idPart(type.value)}`;
+    const label = tid(el('label'), `${name}-label`);
+    const check = tid(el('input'), name);
     check.type = 'checkbox';
-    check.value = option.value;
-    check.checked = option.value === 'ADT^A01';
-    label.append(check, document.createTextNode(` ${option.value}`));
-    box.append(label);
-  }
+    check.value = type.value;
+    check.checked = first ? type.value === 'ADT^A01' : ticked.has(type.value);
+    const star = favorites.includes(type.value) ? '\u2605 ' : '';
+    label.append(check, document.createTextNode(` ${star}${type.value}`));
+    return label;
+  }));
+  document.getElementById('bulk-types-favs').disabled = !types.some((type) => favorites.includes(type.value));
 }
+
+// Quick ways to tick the list, which grows as more message types are added
+function tickTypes(wanted) {
+  for (const check of document.querySelectorAll('#bulk-types input')) check.checked = wanted(check.value);
+}
+document.getElementById('bulk-types-all').addEventListener('click', () => tickTypes(() => true));
+document.getElementById('bulk-types-none').addEventListener('click', () => tickTypes(() => false));
+document.getElementById('bulk-types-favs').addEventListener('click', () => tickTypes((value) => favorites.includes(value)));
 
 function showBulkResult(result) {
   bulkMessages = result.messages;
@@ -410,8 +527,9 @@ function showBulkResult(result) {
   document.getElementById('bulk-copy-status').textContent = '';
   const rows = [];
   bulkMessages.slice(0, SHOWN_ROWS).forEach((message, index) => {
-    const row = el('tr');
-    const open = el('button', '', 'Show');
+    const name = `bulk-row-${index + 1}`;
+    const row = tid(el('tr'), name);
+    const open = tid(el('button', '', 'Show'), `bulk-show-${index + 1}`);
     open.type = 'button';
     open.addEventListener('click', () => {
       input.value = message.text;
@@ -421,15 +539,23 @@ function showBulkResult(result) {
       detachFile();
       clearTimeout(timer);
       run().catch(console.error);
+      showView('editor');
     });
-    const action = el('td');
+    const action = tid(el('td'), `${name}-action`);
     action.append(open);
-    row.append(el('td', '', String(index + 1)), el('td', '', message.type), el('td', '', message.patient), el('td', '', message.time), el('td', '', message.controlId), action);
+    row.append(
+      tid(el('td', '', String(index + 1)), `${name}-number`),
+      tid(el('td', '', message.type), `${name}-type`),
+      tid(el('td', '', message.patient), `${name}-patient`),
+      tid(el('td', '', message.time), `${name}-time`),
+      tid(el('td', '', message.controlId), `${name}-control-id`),
+      action,
+    );
     rows.push(row);
   });
   if (bulkMessages.length > SHOWN_ROWS) {
-    const more = el('tr');
-    more.append(el('td', '', `... and ${bulkMessages.length - SHOWN_ROWS} more (all are included when you copy)`));
+    const more = tid(el('tr'), 'bulk-more');
+    more.append(tid(el('td', '', `... and ${bulkMessages.length - SHOWN_ROWS} more (all are included when you copy)`), 'bulk-more-text'));
     more.firstChild.colSpan = 6;
     rows.push(more);
   }
@@ -540,7 +666,7 @@ async function exportMessages() {
 
 document.getElementById('export-run').addEventListener('click', () => exportMessages().catch(console.error));
 
-buildBulkTypes();
+renderTypeOptions();
 
 /* ---- manual values ---- */
 
@@ -590,23 +716,24 @@ const manualCells = []; // { key, events, cell, text, empty, group, required, ap
 function buildManual() {
   const container = document.getElementById('manual-fields');
   for (const [title, fields] of MANUAL_GROUPS) {
-    const group = el('fieldset', 'manual-group');
-    group.append(el('legend', '', title));
-    const grid = el('div', 'manual-grid');
+    const groupId = `manual-group-${idPart(title).toLowerCase()}`;
+    const group = tid(el('fieldset', 'manual-group'), groupId);
+    group.append(tid(el('legend', '', title), `${groupId}-title`));
+    const grid = tid(el('div', 'manual-grid'), `${groupId}-grid`);
     for (const [key, label, events] of fields) {
-      const cell = el('div', 'manual-cell');
-      const text = el('input');
+      const cell = tid(el('div', 'manual-cell'), `manual-${key}`);
+      const text = tid(el('input'), `manual-${key}-value`);
       text.type = 'text';
       text.id = `m-${key}`;
       text.placeholder = 'random';
       text.maxLength = 80;
       text.autocomplete = 'off';
-      const caption = el('label', 'manual-label', label);
+      const caption = tid(el('label', 'manual-label', label), `manual-${key}-label`);
       caption.htmlFor = text.id;
-      const empty = el('input');
+      const empty = tid(el('input'), `manual-${key}-empty`);
       empty.type = 'checkbox';
       empty.id = `m-${key}-empty`;
-      const emptyLabel = el('label', 'manual-empty');
+      const emptyLabel = tid(el('label', 'manual-empty'), `manual-${key}-empty-label`);
       emptyLabel.htmlFor = empty.id;
       emptyLabel.append(empty, document.createTextNode(' empty'));
       const item = { key, events: events || null, cell, text, empty, group, required: MANDATORY.has(key), applicable: true };
@@ -703,7 +830,10 @@ buildManual();
 // The main process says which controls are remembered; their values are applied once
 // everything else is set up, and saved shortly after each change.
 async function setUpSettings() {
-  const { ids, controls } = await window.hl7.loadSettings();
+  const { ids, controls, folders, favorites: favoriteList } = await window.hl7.loadSettings();
+  setFavorites(favoriteList ?? []);
+  showFolder('save', folders.save);
+  showFolder('export', folders.export);
   const remembered = new Set(ids);
   for (const [id, value] of Object.entries(controls)) {
     const control = document.getElementById(id);
@@ -753,22 +883,118 @@ async function newMessage() {
 function exportFromMenu() {
   if (bulkMessages.length === 0) {
     exportStatus.classList.add('error');
-    exportStatus.textContent = 'There is no list to export. Generate messages under Bulk generation, or open a file with several messages.';
-    document.getElementById('bulk').open = true;
+    exportStatus.textContent = 'There is no list to export. Generate messages in the Bulk view, or open a file with several messages.';
+    showView('bulk');
     return Promise.resolve();
   }
   return exportMessages();
 }
 
+// Save, Open and New work on the message, so the Editor view is brought forward first
+const inEditor = (action) => () => {
+  showView('editor');
+  return action();
+};
 const MENU_COMMANDS = {
-  new: newMessage,
-  open: openFromDialog,
-  save: () => saveMessage('save'),
-  saveAs: () => saveMessage('saveAs'),
-  export: exportFromMenu,
+  about: showAbout,
+  new: inEditor(newMessage),
+  open: inEditor(openFromDialog),
+  save: inEditor(() => saveMessage('save')),
+  saveAs: inEditor(() => saveMessage('saveAs')),
+  export: () => {
+    showView('bulk');
+    return exportFromMenu();
+  },
 };
 
 window.hl7.onMenuCommand((command) => {
   const action = Object.hasOwn(MENU_COMMANDS, command) ? MENU_COMMANDS[command] : null;
   if (action) action().catch(console.error);
+});
+
+/* ---- views (the sidebar) ---- */
+
+const navItems = Array.from(document.querySelectorAll('.nav-item'));
+
+function showView(name) {
+  const target = document.getElementById(`view-${name}`);
+  if (!target) return;
+  for (const view of document.querySelectorAll('.view')) view.hidden = view !== target;
+  for (const item of navItems) {
+    const active = item.dataset.view === name;
+    item.classList.toggle('active', active);
+    if (active) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
+  }
+}
+
+for (const item of navItems) item.addEventListener('click', () => showView(item.dataset.view));
+
+// The Editor shows the file format that Save will use; the choice itself lives in Settings
+const FORMAT_NAMES = { cr: 'CR', lf: 'LF', crlf: 'CRLF', 'utf-8': 'UTF-8', 'windows-1252': 'Windows-1252' };
+
+function updateFormatSummary() {
+  const parts = [FORMAT_NAMES[fieldValue('file-eol')], FORMAT_NAMES[fieldValue('file-encoding')]];
+  if (document.getElementById('file-mllp').checked) parts.push('MLLP');
+  document.getElementById('file-format').textContent = parts.join(' - ');
+}
+
+for (const id of ['file-eol', 'file-encoding', 'file-mllp']) document.getElementById(id).addEventListener('change', updateFormatSummary);
+document.getElementById('file-format').addEventListener('click', () => showView('settings'));
+updateFormatSummary();
+
+/* ---- default folders ---- */
+
+const FOLDER_UNSET = 'Not set - the last used folder is used';
+
+function showFolder(kind, folder) {
+  const output = document.getElementById(`folder-${kind}`);
+  output.textContent = folder || FOLDER_UNSET;
+  output.title = folder || '';
+  output.classList.toggle('unset', !folder);
+}
+
+async function changeFolder(kind, action) {
+  const status = document.getElementById('folder-status');
+  status.classList.remove('error');
+  status.textContent = '';
+  const result = await action();
+  if (result.canceled) return;
+  if (!result.ok) {
+    showFailure(status, result.error);
+    return;
+  }
+  showFolder(kind, result.path ?? null);
+}
+
+for (const kind of ['save', 'export']) {
+  document.getElementById(`folder-${kind}-choose`).addEventListener('click', () => changeFolder(kind, () => window.hl7.chooseFolder(kind)).catch(console.error));
+  document.getElementById(`folder-${kind}-clear`).addEventListener('click', () => changeFolder(kind, () => window.hl7.clearFolder(kind)).catch(console.error));
+}
+
+/* ---- About ---- */
+
+const aboutDialog = document.getElementById('about');
+
+async function showAbout() {
+  const info = await window.hl7.getAppInfo();
+  document.getElementById('about-name').textContent = info.name;
+  document.getElementById('about-version').textContent = `Version ${info.version}`;
+  document.getElementById('about-license').textContent = info.license;
+  document.getElementById('about-owner').textContent = info.owner;
+  const link = document.getElementById('about-repo');
+  link.textContent = info.repository;
+  link.href = info.repository;
+  aboutDialog.showModal();
+}
+
+// The link is opened by the main process (always the repository address), never by the page itself
+document.getElementById('about-repo').addEventListener('click', (event) => {
+  event.preventDefault();
+  window.hl7.openRepository().catch(console.error);
+});
+
+// A click on the dark area around the window closes it
+aboutDialog.addEventListener('click', (event) => {
+  if (event.target === aboutDialog) aboutDialog.close();
 });

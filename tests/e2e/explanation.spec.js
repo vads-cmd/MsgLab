@@ -1,5 +1,5 @@
 const { test, expect, _electron: electron } = require('@playwright/test');
-const { HL7_MESSAGES, waitForWindow, pasteMessage, clickTab, getExplanationResults } = require('./helpers');
+const { HL7_MESSAGES, waitForWindow, pasteMessage, clickTab, getExplanationResults, goTo } = require('./helpers');
 
 test.describe('Message Explanation', () => {
   let electronApp;
@@ -82,6 +82,7 @@ test.describe('Message Explanation', () => {
 
   test('explains generated message', async () => {
     // Generate a message first
+    await goTo(window, 'generate');
     await window.selectOption('#gen-type', 'ADT^A01');
     await window.click('#generator button[type="submit"]');
     await window.waitForTimeout(500);

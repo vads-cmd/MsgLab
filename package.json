@@ -1,7 +1,8 @@
 {
-  "name": "hl7-workbench",
-  "version": "0.1.0",
-  "description": "Generate, validate and explain HL7 v2 messages for testing",
+  "name": "msglab",
+  "productName": "MsgLab",
+  "version": "0.1.13",
+  "description": "Generate, validate, explain and (later) send HL7 v2 messages for testing",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -13,6 +14,12 @@
     "allure:open": "allure open allure-report"
   },
   "license": "MIT",
+  "author": "Vadym \"Ailur\" Shevchenko",
+  "homepage": "https://github.com/vads-cmd/MsgLab",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vads-cmd/MsgLab.git"
+  },
   "private": true,
   "devDependencies": {
     "@playwright/test": "^1.64.1",

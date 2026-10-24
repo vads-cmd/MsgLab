@@ -620,9 +620,9 @@ function generate(raw = {}) {
     processingId,
     fields: manualValues(raw.fields),
     sendingApp: cleanName(raw.sendingApp, 'HIS'),
-    sendingFacility: cleanName(raw.sendingFacility, 'MAINHOSP'),
+    sendingFacility: cleanName(raw.sendingFacility, 'SENDHOSP'),
     receivingApp: cleanName(raw.receivingApp, 'EHR'),
-    receivingFacility: cleanName(raw.receivingFacility, 'MAINHOSP'),
+    receivingFacility: cleanName(raw.receivingFacility, 'GETHOSP'),
   };
   const generatedId = `MSG${timestamp(now)}${digits(rng, 4)}`;
   // A caller (bulk generation) can supply its own, unique, control ID

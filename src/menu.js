@@ -41,8 +41,11 @@ function buildMenuTemplate({ send, isMac, appName, devTools }) {
     ],
   };
   const windowMenu = { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, ...(isMac ? [{ role: 'front' }] : [{ role: 'close' }])] };
+  const about = { label: `About ${appName}`, click: () => send('about') };
+  const help = { label: 'Help', submenu: [about] };
   const template = [file, edit, view, windowMenu];
-  if (isMac) template.unshift({ label: appName, submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] });
+  if (!isMac) template.push(help);
+  if (isMac) template.unshift({ label: appName, submenu: [about, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] });
   return template;
 }
 

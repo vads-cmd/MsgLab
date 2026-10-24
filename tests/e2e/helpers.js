@@ -65,6 +65,7 @@ async function closeApp(electronApp) {
  * Paste an HL7 message into the message textarea
  */
 async function pasteMessage(window, message) {
+  await goTo(window, 'editor');
   await window.click('#message');
   await window.fill('#message', message);
   // Trigger input event for auto-validation
@@ -76,9 +77,18 @@ async function pasteMessage(window, message) {
 }
 
 /**
+ * Go to a view of the sidebar: editor, generate, bulk or settings
+ */
+async function goTo(window, view) {
+  await window.click(`#nav-${view}`);
+  await window.waitForTimeout(100);
+}
+
+/**
  * Click a tab button (Validation or Explain)
  */
 async function clickTab(window, tabName) {
+  await goTo(window, 'editor');
   const selector = `[data-tab="${tabName}"]`;
   await window.click(selector);
   await window.waitForTimeout(200);
@@ -113,12 +123,13 @@ async function generateMessage(window, options = {}) {
     messageType = 'ADT^A01',
     version = '2.5.1',
     sendingApp = 'HIS',
-    sendingFac = 'MAINHOSP',
+    sendingFac = 'SENDHOSP',
     receivingApp = 'EHR',
-    receivingFac = 'MAINHOSP',
+    receivingFac = 'GETHOSP',
     processing = 'T',
   } = options;
 
+  await goTo(window, 'generate');
   // Set message type
   await window.selectOption('#gen-type', messageType);
   // Set version
@@ -152,6 +163,7 @@ async function generateMessage(window, options = {}) {
  */
 async function setFileOptions(window, options = {}) {
   const { eol = 'cr', encoding = 'utf-8', mllp = false } = options;
+  await goTo(window, 'settings');
   if (eol) {
     await window.selectOption('#file-eol', eol);
   }
@@ -171,12 +183,7 @@ async function setFileOptions(window, options = {}) {
 async function configureBulkGeneration(window, options = {}) {
   const { count = 10, minutes = 5, mode = 'independent' } = options;
 
-  // Open bulk generation panel if closed
-  const bulkSummary = await window.locator('#bulk').getAttribute('open');
-  if (!bulkSummary) {
-    await window.click('#bulk > summary');
-    await window.waitForTimeout(200);
-  }
+  await goTo(window, 'bulk');
 
   // Set count
   await window.fill('#bulk-count', String(count));
@@ -192,6 +199,7 @@ module.exports = {
   closeApp,
   pasteMessage,
   clickTab,
+  goTo,
   getValidationResults,
   getExplanationResults,
   getMessageText,

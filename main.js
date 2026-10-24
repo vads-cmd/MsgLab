@@ -1,6 +1,7 @@
 'use strict';
 
-const { app, BrowserWindow, Menu, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
+const fs = require('node:fs/promises');
 const path = require('node:path');
 const { validate } = require('./src/hl7/validator');
 const { explain } = require('./src/hl7/explainer');
@@ -9,6 +10,7 @@ const { generateBulk } = require('./src/hl7/bulk');
 const files = require('./src/files');
 const settingsStore = require('./src/settings');
 const { buildMenuTemplate } = require('./src/menu');
+const { ABOUT } = require('./src/about');
 
 // The HL7 logic runs here in the main process; the page asks for it through the preload script.
 const asText = (value) => (typeof value === 'string' ? value : '');
@@ -71,10 +73,12 @@ let lastFolder = null;
 
 // Remembered settings (form choices and the last folder), kept in a small file in the app's data folder.
 let controlSettings = {};
+let defaultFolders = { save: null, export: null };
+let favoriteTypes = [];
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 let writing = Promise.resolve();
 function persistSettings() {
-  const snapshot = { controls: controlSettings, folder: lastFolder };
+  const snapshot = { controls: controlSettings, folder: lastFolder, folders: defaultFolders, favorites: favoriteTypes };
   // one write after the other, so two quick saves cannot mix
   writing = writing.then(() => settingsStore.saveSettings(settingsFile(), snapshot)).catch((err) => console.error('Could not save settings:', err.message));
   return writing;
@@ -84,10 +88,59 @@ function rememberFolder(folder) {
   void persistSettings(); // never rejects: errors are logged inside, and nobody needs to wait for the write
 }
 
-ipcMain.handle('settings:load', () => ({ ids: [...settingsStore.REMEMBERED_CONTROLS], controls: controlSettings }));
+ipcMain.handle('settings:load', () => ({ ids: [...settingsStore.REMEMBERED_CONTROLS], controls: controlSettings, folders: defaultFolders, favorites: favoriteTypes }));
+ipcMain.handle('settings:setFavorites', (_event, list) => {
+  favoriteTypes = settingsStore.cleanFavorites(list);
+  return persistSettings().then(() => favoriteTypes);
+});
 ipcMain.handle('settings:save', (_event, controls) => {
   controlSettings = settingsStore.cleanSettings({ controls }).controls;
   return persistSettings().then(() => true);
+});
+
+// Where a Save or Export dialog starts: the default folder when it is set and still there,
+// otherwise the folder used last, otherwise Documents.
+async function isFolder(folder) {
+  try {
+    return (await fs.stat(folder)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function startFolder(kind) {
+  const wanted = defaultFolders[kind];
+  if (wanted && await isFolder(wanted)) return wanted;
+  return lastFolder ?? app.getPath('documents');
+}
+
+// Choosing a default folder: the dialog is in the main process, the page only sees the result (to show it).
+ipcMain.handle('settings:chooseFolder', async (event, kind) => {
+  if (!settingsStore.FOLDER_KINDS.has(kind)) return { ok: false, error: 'Unknown folder setting.' };
+  const chosen = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+    title: kind === 'save' ? 'Default folder for saving messages' : 'Default folder for exporting the bulk list',
+    defaultPath: await startFolder(kind),
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (chosen.canceled || chosen.filePaths.length === 0) return { ok: false, canceled: true };
+  defaultFolders = { ...defaultFolders, [kind]: chosen.filePaths[0] };
+  await persistSettings();
+  return { ok: true, path: chosen.filePaths[0] };
+});
+
+ipcMain.handle('settings:clearFolder', async (_event, kind) => {
+  if (!settingsStore.FOLDER_KINDS.has(kind)) return { ok: false, error: 'Unknown folder setting.' };
+  defaultFolders = { ...defaultFolders, [kind]: null };
+  await persistSettings();
+  return { ok: true };
+});
+
+// About: the text comes from src/about.js, the version from package.json. The link is opened from here
+// with the fixed address, so the page cannot ask for any other address to be opened.
+ipcMain.handle('app:info', () => ({ ...ABOUT, version: app.getVersion() }));
+ipcMain.handle('app:openRepository', async () => {
+  await shell.openExternal(ABOUT.repository);
+  return true;
 });
 
 ipcMain.handle('file:save', async (event, payload) => {
@@ -99,7 +152,7 @@ ipcMain.handle('file:save', async (event, payload) => {
     if (!target) {
       const chosen = await dialog.showSaveDialog(win, {
         title: 'Save message',
-        defaultPath: path.join(lastFolder ?? app.getPath('documents'), files.suggestFileName(asText(p.text))),
+        defaultPath: path.join(await startFolder('save'), files.suggestFileName(asText(p.text))),
         filters: [{ name: 'HL7 messages', extensions: ['hl7'] }, { name: 'Text files', extensions: ['txt'] }, { name: 'All files', extensions: ['*'] }],
       });
       if (chosen.canceled || !chosen.filePath) return { ok: false, canceled: true };
@@ -131,7 +184,7 @@ ipcMain.handle('file:export', async (event, payload) => {
     if (p.mode === 'one') {
       const chosen = await dialog.showSaveDialog(win, {
         title: 'Export messages',
-        defaultPath: path.join(lastFolder ?? app.getPath('documents'), prepared[0].fileName),
+        defaultPath: path.join(await startFolder('export'), prepared[0].fileName),
         filters: [{ name: 'HL7 messages', extensions: ['hl7'] }, { name: 'Text files', extensions: ['txt'] }, { name: 'All files', extensions: ['*'] }],
       });
       if (chosen.canceled || !chosen.filePath) return { ok: false, canceled: true };
@@ -141,7 +194,7 @@ ipcMain.handle('file:export', async (event, payload) => {
     }
     const chosen = await dialog.showOpenDialog(win, {
       title: p.mode === 'each' ? 'Choose a folder for the message files' : 'Choose a folder for the files',
-      defaultPath: lastFolder ?? app.getPath('documents'),
+      defaultPath: await startFolder('export'),
       properties: ['openDirectory', 'createDirectory'],
     });
     if (chosen.canceled || chosen.filePaths.length === 0) return { ok: false, canceled: true };
@@ -257,7 +310,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: 'HL7 Workbench',
+    title: ABOUT.name,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -265,6 +318,9 @@ function createWindow() {
       sandbox: true,
     },
   });
+  // The page never opens new windows or leaves index.html; links go through the main process
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event) => event.preventDefault());
   const id = win.webContents.id;
   win.on('close', (event) => {
     if (!dirtyWindows.has(id)) return;
@@ -291,6 +347,8 @@ app.whenReady().then(async () => {
   const saved = await settingsStore.loadSettings(settingsFile());
   controlSettings = saved.controls;
   lastFolder = saved.folder;
+  defaultFolders = saved.folders;
+  favoriteTypes = saved.favorites;
   setUpMenu();
   createWindow();
   // macOS: re-create the window when the dock icon is clicked and no windows are open

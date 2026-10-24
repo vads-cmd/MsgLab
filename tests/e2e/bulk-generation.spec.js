@@ -1,5 +1,5 @@
 const { test, expect, _electron: electron } = require('@playwright/test');
-const { waitForWindow, configureBulkGeneration } = require('./helpers');
+const { waitForWindow, configureBulkGeneration, goTo } = require('./helpers');
 
 test.describe('Bulk Generation', () => {
   let electronApp;
@@ -14,10 +14,9 @@ test.describe('Bulk Generation', () => {
     await require("./helpers").closeApp(electronApp);
   });
 
-  test('opens bulk generation panel', async () => {
-    // Click the bulk summary to open the panel
-    await window.click('#bulk > summary');
-    await window.waitForTimeout(300);
+  test('opens the bulk generation view', async () => {
+    // Open the Bulk view from the sidebar
+    await goTo(window, 'bulk');
 
     // The bulk form should be visible
     const bulkForm = await window.locator('#bulk-form').isVisible();
@@ -131,9 +130,8 @@ test.describe('Bulk Generation', () => {
   });
 
   test('bulk generation uses selected message type', async () => {
-    // Open bulk panel
-    await window.click('#bulk > summary');
-    await window.waitForTimeout(200);
+    // Open the Bulk view
+    await goTo(window, 'bulk');
 
     // Uncheck ADT^A01 and check ADT^A02
     const a01Checkbox = window.locator('#bulk-types input[value="ADT^A01"]');
