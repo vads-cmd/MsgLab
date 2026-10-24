@@ -81,7 +81,7 @@ function persistSettings() {
 }
 function rememberFolder(folder) {
   lastFolder = folder;
-  persistSettings();
+  void persistSettings(); // never rejects: errors are logged inside, and nobody needs to wait for the write
 }
 
 ipcMain.handle('settings:load', () => ({ ids: [...settingsStore.REMEMBERED_CONTROLS], controls: controlSettings }));
@@ -123,8 +123,8 @@ ipcMain.handle('file:forget', (event) => {
 ipcMain.handle('file:export', async (event, payload) => {
   const p = payload && typeof payload === 'object' ? payload : {};
   const win = BrowserWindow.fromWebContents(event.sender);
+  if (!Array.isArray(p.messages) || p.messages.some((text) => typeof text !== 'string')) return { ok: false, error: 'The messages must be a list of text.' };
   try {
-    if (!Array.isArray(p.messages) || p.messages.some((text) => typeof text !== 'string')) throw new TypeError('The messages must be a list of text.');
     const options = { lineEnding: p.lineEnding, encoding: p.encoding, mllp: p.mllp === true, batch: p.batch === true };
     const plan = files.planExport(p.messages, { mode: p.mode });
     const prepared = files.prepareExportFiles(plan, options);
