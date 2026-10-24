@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('hl7', {
   setFavorites: (list) => ipcRenderer.invoke('settings:setFavorites', list),
   chooseFolder: (kind) => ipcRenderer.invoke('settings:chooseFolder', kind),
   clearFolder: (kind) => ipcRenderer.invoke('settings:clearFolder', kind),
+  setTheme: (value) => ipcRenderer.invoke('app:setTheme', value),
   getAppInfo: () => ipcRenderer.invoke('app:info'),
   openRepository: () => ipcRenderer.invoke('app:openRepository'),
   loadSettings: () => ipcRenderer.invoke('settings:load'),

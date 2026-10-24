@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, shell } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { validate } = require('./src/hl7/validator');
@@ -87,6 +87,16 @@ function rememberFolder(folder) {
   lastFolder = folder;
   void persistSettings(); // never rejects: errors are logged inside, and nobody needs to wait for the write
 }
+
+// Light, dark or follow the system. Electron then also changes what the page's prefers-color-scheme says,
+// so the stylesheet needs no extra rules, and the menus and dialogs follow too.
+function applyTheme(value) {
+  nativeTheme.themeSource = settingsStore.THEMES.has(value) ? value : 'system';
+}
+ipcMain.handle('app:setTheme', (_event, value) => {
+  applyTheme(value);
+  return nativeTheme.themeSource;
+});
 
 ipcMain.handle('settings:load', () => ({ ids: [...settingsStore.REMEMBERED_CONTROLS], controls: controlSettings, folders: defaultFolders, favorites: favoriteTypes }));
 ipcMain.handle('settings:setFavorites', (_event, list) => {
@@ -349,6 +359,7 @@ app.whenReady().then(async () => {
   lastFolder = saved.folder;
   defaultFolders = saved.folders;
   favoriteTypes = saved.favorites;
+  applyTheme(controlSettings['app-theme']);
   setUpMenu();
   createWindow();
   // macOS: re-create the window when the dock icon is clicked and no windows are open

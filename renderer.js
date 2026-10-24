@@ -172,8 +172,32 @@ function updateStats() {
   document.getElementById('message-stats').textContent = segments === 0 ? '' : `${plural(segments, 'segment')} - ${plural(text.length, 'character')}`;
 }
 
+// Line numbers: one number per real line, as tall as that line is once wrapped
+const gutter = document.getElementById('message-gutter');
+const gutterInner = gutter.firstElementChild;
+const mirror = document.getElementById('message-mirror');
+
+function updateLineNumbers() {
+  const lines = input.value.split('\n');
+  const style = getComputedStyle(input);
+  mirror.style.width = `${input.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight)}px`;
+  mirror.replaceChildren(...lines.map((line) => el('div', '', line === '' ? '\u200B' : line)));
+  gutter.style.width = `${String(lines.length).length}ch`;
+  gutterInner.replaceChildren(...lines.map((_, index) => {
+    const row = tid(el('div', '', String(index + 1)), `message-line-${index + 1}`);
+    row.style.height = `${mirror.children[index].getBoundingClientRect().height}px`;
+    return row;
+  }));
+  gutterInner.style.transform = `translateY(${-input.scrollTop}px)`;
+}
+input.addEventListener('scroll', () => {
+  gutterInner.style.transform = `translateY(${-input.scrollTop}px)`;
+});
+if (typeof ResizeObserver === 'function') new ResizeObserver(updateLineNumbers).observe(input);
+
 async function run() {
   updateStats();
+  updateLineNumbers();
   const text = input.value;
   if (text.trim() === '') {
     latestRequest++;
@@ -197,6 +221,7 @@ async function run() {
 tabs.forEach((tab) => tab.addEventListener('click', () => selectTab(tab.dataset.tab)));
 input.addEventListener('input', () => {
   clearTimeout(timer);
+  updateLineNumbers();
   timer = setTimeout(run, 250);
   markChanged();
 });
@@ -860,6 +885,11 @@ async function setUpSettings() {
   document.addEventListener('change', later);
   document.addEventListener('input', later);
 }
+
+// The theme is applied by the main process (it changes what prefers-color-scheme reports)
+document.getElementById('app-theme').addEventListener('change', (event) => {
+  window.hl7.setTheme(event.target.value).catch(console.error);
+});
 
 setUpSettings().catch(console.error);
 

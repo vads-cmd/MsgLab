@@ -260,6 +260,23 @@ select {
   font: inherit;
   font-size: 13px;
 }
+/* Own arrow (drawn with gradients, as the CSP allows no data: images) so it sits away from the border */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 32px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+select:hover:not(:disabled) {
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--accent) 50%),
+    linear-gradient(135deg, var(--accent) 50%, transparent 50%);
+}
 input:not([type="checkbox"]):hover:not(:disabled),
 select:hover:not(:disabled) { border-color: var(--accent); }
 input:not([type="checkbox"]):focus,
@@ -301,8 +318,49 @@ input:disabled { opacity: 0.55; }
   border-bottom: 1px solid var(--border);
 }
 
+.editor-box {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.gutter {
+  flex: none;
+  min-width: 3ch;
+  overflow: hidden;
+  padding: 12px 8px 12px 10px;
+  box-sizing: content-box;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: right;
+  user-select: none;
+}
+
+.gutter-inner > div { font-variant-numeric: tabular-nums; }
+
+/* Hidden copy of the text, used only to measure how tall each wrapped line is */
+.mirror {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  padding: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 #message {
   flex: 1;
+  min-width: 0;
   width: 100%;
   padding: 12px;
   border: 0;
@@ -313,9 +371,10 @@ input:disabled { opacity: 0.55; }
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 13px;
   line-height: 1.5;
-  white-space: pre; /* long HL7 lines scroll sideways instead of wrapping */
-  overflow-wrap: normal;
-  overflow: auto;
+  white-space: pre-wrap; /* long segments wrap inside the box; real line breaks stay as they are */
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 #message:focus {

@@ -8,8 +8,11 @@ const REMEMBERED_CONTROLS = new Set([
   'gen-type', 'gen-version', 'gen-send-app', 'gen-send-fac', 'gen-recv-app', 'gen-recv-fac',
   'gen-processing', 'gen-all-empty', 'manual-show-optional',
   'bulk-count', 'bulk-minutes', 'bulk-mode',
-  'export-mode', 'export-batch', 'file-eol', 'file-encoding', 'file-mllp',
+  'export-mode', 'export-batch', 'file-eol', 'file-encoding', 'file-mllp', 'app-theme',
 ]);
+
+// The colour themes the app can show; 'system' follows the operating system
+const THEMES = new Set(['system', 'light', 'dark']);
 
 const MAX_TEXT = 100;
 
@@ -72,4 +75,4 @@ async function saveSettings(file, settings) {
   await fs.rename(temp, file);
 }
 
-module.exports = { REMEMBERED_CONTROLS, FOLDER_KINDS, cleanFavorites, cleanSettings, loadSettings, saveSettings };
+module.exports = { REMEMBERED_CONTROLS, THEMES, FOLDER_KINDS, cleanFavorites, cleanSettings, loadSettings, saveSettings };
