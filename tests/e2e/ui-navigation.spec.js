@@ -1,59 +1,69 @@
-const { test, expect, _electron: electron } = require('@playwright/test');
-const { HL7_MESSAGES, waitForWindow, pasteMessage, clickTab } = require('./helpers');
+const { test, expect } = require('@playwright/test');
+const {
+  HL7_MESSAGES, waitForWindow, pasteMessage, clickTab, getValidationBadge,
+  getAppTitle, isSendDisabled, getMessageStats,
+  clearDirtyState, closeApp, tid,
+  launchApp, takeScreenshotOnFailure,
+} = require('./helpers');
 
 test.describe('UI Navigation', () => {
   let electronApp;
   let window;
 
   test.beforeEach(async () => {
-    electronApp = await electron.launch({ args: ['.'] });
+    electronApp = await launchApp();
     window = await waitForWindow(electronApp);
+    // Clear dirty state so the unsaved-changes modal never blocks this test
+    await clearDirtyState(window);
   });
 
-  test.afterEach(async () => {
-    await require("./helpers").closeApp(electronApp);
+  test.afterEach(async ({}, testInfo) => {
+    if (testInfo.status !== testInfo.expectedStatus) {
+      await takeScreenshotOnFailure(window, testInfo);
+    }
+    await closeApp(electronApp);
   });
 
   test('shows app title', async () => {
-    const title = await window.locator('h1').textContent();
+    const title = await getAppTitle(window);
     expect(title).toBe('MsgLab');
   });
 
   test('shows message textarea', async () => {
-    const textarea = await window.locator('#message').isVisible();
-    expect(textarea).toBe(true);
+    const textarea = tid(window, 'message');
+    await expect(textarea).toBeVisible();
   });
 
   test('shows validation tab by default', async () => {
-    const validationTab = await window.locator('#tab-validation').getAttribute('class');
-    expect(validationTab).toContain('active');
+    const validationTab = tid(window, 'tab-validation');
+    await expect(validationTab).toHaveAttribute('aria-selected', 'true');
 
-    const validationPanel = await window.locator('#panel-validation').isVisible();
-    expect(validationPanel).toBe(true);
+    const validationPanel = tid(window, 'panel-validation');
+    await expect(validationPanel).toBeVisible();
 
-    const explainPanel = await window.locator('#panel-explain').isVisible();
-    expect(explainPanel).toBe(false);
+    const explainPanel = tid(window, 'panel-explain');
+    await expect(explainPanel).not.toBeVisible();
   });
 
   test('switches to explain tab', async () => {
     await clickTab(window, 'explain');
 
-    const explainTab = await window.locator('#tab-explain').getAttribute('class');
-    expect(explainTab).toContain('active');
+    const explainTab = tid(window, 'tab-explain');
+    await expect(explainTab).toHaveAttribute('aria-selected', 'true');
 
-    const explainPanel = await window.locator('#panel-explain').isVisible();
-    expect(explainPanel).toBe(true);
+    const explainPanel = tid(window, 'panel-explain');
+    await expect(explainPanel).toBeVisible();
 
-    const validationPanel = await window.locator('#panel-validation').isVisible();
-    expect(validationPanel).toBe(false);
+    const validationPanel = tid(window, 'panel-validation');
+    await expect(validationPanel).not.toBeVisible();
   });
 
   test('switches back to validation tab', async () => {
     await clickTab(window, 'explain');
     await clickTab(window, 'validation');
 
-    const validationTab = await window.locator('#tab-validation').getAttribute('class');
-    expect(validationTab).toContain('active');
+    const validationTab = tid(window, 'tab-validation');
+    await expect(validationTab).toHaveAttribute('aria-selected', 'true');
   });
 
   test('rapid tab switching', async () => {
@@ -64,69 +74,110 @@ test.describe('UI Navigation', () => {
     }
 
     // Should end on validation tab
-    const validationTab = await window.locator('#tab-validation').getAttribute('class');
-    expect(validationTab).toContain('active');
+    const validationTab = tid(window, 'tab-validation');
+    await expect(validationTab).toHaveAttribute('aria-selected', 'true');
   });
 
-  test('shows generator form', async () => {
-    const form = await window.locator('#generator').isVisible();
-    expect(form).toBe(true);
+  test('shows sidebar navigation', async () => {
+    const sidebar = tid(window, 'sidebar');
+    await expect(sidebar).toBeVisible();
+
+    // All nav items should be visible
+    await expect(tid(window, 'nav-editor')).toBeVisible();
+    await expect(tid(window, 'nav-generate')).toBeVisible();
+    await expect(tid(window, 'nav-bulk')).toBeVisible();
+    await expect(tid(window, 'nav-send')).toBeVisible();
+    await expect(tid(window, 'nav-settings')).toBeVisible();
   });
 
-  test('shows generate button', async () => {
-    const button = await window.locator('#generator button[type="submit"]').textContent();
-    expect(button).toBe('Generate');
+  test('Send button is disabled', async () => {
+    const disabled = await isSendDisabled(window);
+    expect(disabled).toBe(true);
   });
 
-  test('shows message type dropdown', async () => {
-    const dropdown = await window.locator('#gen-type').isVisible();
-    expect(dropdown).toBe(true);
+  test('shows editor view by default', async () => {
+    const editorView = tid(window, 'view-editor');
+    await expect(editorView).toBeVisible();
   });
 
-  test('shows version dropdown', async () => {
-    const dropdown = await window.locator('#gen-version').isVisible();
-    expect(dropdown).toBe(true);
+  test('navigates to generate view', async () => {
+    await window.click('[data-testid="nav-generate"]');
+    await window.waitForTimeout(200);
+
+    const generateView = tid(window, 'view-generate');
+    await expect(generateView).toBeVisible();
   });
 
-  test('shows manual values panel', async () => {
-    const manual = await window.locator('#manual').isVisible();
-    expect(manual).toBe(true);
+  test('navigates to bulk view', async () => {
+    await window.click('[data-testid="nav-bulk"]');
+    await window.waitForTimeout(200);
+
+    const bulkView = tid(window, 'view-bulk');
+    await expect(bulkView).toBeVisible();
   });
 
-  test('shows bulk generation panel', async () => {
-    const bulk = await window.locator('#bulk').isVisible();
-    expect(bulk).toBe(true);
+  test('navigates to settings view', async () => {
+    await window.click('[data-testid="nav-settings"]');
+    await window.waitForTimeout(200);
+
+    const settingsView = tid(window, 'view-settings');
+    await expect(settingsView).toBeVisible();
+  });
+
+  test('shows generate button in generate view', async () => {
+    await window.click('[data-testid="nav-generate"]');
+    await window.waitForTimeout(200);
+
+    const button = tid(window, 'gen-submit');
+    await expect(button).toBeVisible();
+    const text = await button.textContent();
+    expect(text).toBe('Generate');
+  });
+
+  test('shows message type dropdown in generate view', async () => {
+    await window.click('[data-testid="nav-generate"]');
+    await window.waitForTimeout(200);
+
+    const dropdown = tid(window, 'gen-type');
+    await expect(dropdown).toBeVisible();
+  });
+
+  test('shows manual values panel in generate view', async () => {
+    await window.click('[data-testid="nav-generate"]');
+    await window.waitForTimeout(200);
+
+    const manual = tid(window, 'manual');
+    await expect(manual).toBeVisible();
   });
 
   test('shows file operation buttons', async () => {
-    const openButton = await window.locator('#file-open').isVisible();
-    expect(openButton).toBe(true);
+    const openButton = tid(window, 'file-open');
+    await expect(openButton).toBeVisible();
 
-    const saveButton = await window.locator('#file-save').isVisible();
-    expect(saveButton).toBe(true);
+    const saveButton = tid(window, 'file-save');
+    await expect(saveButton).toBeVisible();
 
-    const saveAsButton = await window.locator('#file-save-as').isVisible();
-    expect(saveAsButton).toBe(true);
+    const saveAsButton = tid(window, 'file-save-as');
+    await expect(saveAsButton).toBeVisible();
   });
 
   test('shows tabs with correct labels', async () => {
-    const validationTab = await window.locator('#tab-validation').textContent();
+    const validationTab = await tid(window, 'tab-validation').textContent();
     expect(validationTab).toBe('Validation');
 
-    const explainTab = await window.locator('#tab-explain').textContent();
+    const explainTab = await tid(window, 'tab-explain').textContent();
     expect(explainTab).toBe('Explain');
   });
 
   test('validation tab label updates with problems', async () => {
     await pasteMessage(window, HL7_MESSAGES.INVALID);
-    await window.waitForTimeout(500);
 
-    const validationTab = await window.locator('#tab-validation').textContent();
+    const validationTab = await tid(window, 'tab-validation').textContent();
     expect(validationTab).toContain('Validation (');
   });
 
   test('shows placeholder text in textarea', async () => {
-    const placeholder = await window.locator('#message').getAttribute('placeholder');
+    const placeholder = await tid(window, 'message').getAttribute('placeholder');
     expect(placeholder).toBeTruthy();
     expect(placeholder).toContain('HL7');
   });
@@ -134,18 +185,63 @@ test.describe('UI Navigation', () => {
   test('navigates between tabs with message', async () => {
     // Paste a message
     await pasteMessage(window, HL7_MESSAGES.ADT_A01);
-    await window.waitForTimeout(500);
 
     // Switch to explain tab
     await clickTab(window, 'explain');
-    await window.waitForTimeout(300);
 
     // Switch back to validation tab
     await clickTab(window, 'validation');
-    await window.waitForTimeout(300);
 
     // Should still show valid
-    const badge = await window.locator('#panel-validation .badge.ok').textContent();
+    const badge = await getValidationBadge(window);
     expect(badge).toBe('Valid');
+  });
+
+  test('shows message stats after pasting', async () => {
+    await pasteMessage(window, HL7_MESSAGES.ADT_A01);
+
+    const stats = await getMessageStats(window);
+    expect(stats).toContain('segment');
+    expect(stats).toContain('character');
+  });
+
+  test('shows line numbers gutter', async () => {
+    const gutter = tid(window, 'message-gutter');
+    await expect(gutter).toBeVisible();
+  });
+
+  test('shows editor toolbar', async () => {
+    const toolbar = tid(window, 'editor-toolbar');
+    await expect(toolbar).toBeVisible();
+  });
+
+  test('shows editor status bar', async () => {
+    const statusBar = tid(window, 'editor-statusbar');
+    await expect(statusBar).toBeVisible();
+  });
+
+  test('view switching hides other views', async () => {
+    // Navigate to generate
+    await window.click('[data-testid="nav-generate"]');
+    await window.waitForTimeout(200);
+
+    // Editor view should be hidden
+    const editorView = tid(window, 'view-editor');
+    await expect(editorView).not.toBeVisible();
+
+    // Generate view should be visible
+    const generateView = tid(window, 'view-generate');
+    await expect(generateView).toBeVisible();
+
+    // Navigate to bulk
+    await window.click('[data-testid="nav-bulk"]');
+    await window.waitForTimeout(200);
+
+    // Generate view should be hidden
+    await expect(generateView).not.toBeVisible();
+
+    // Bulk view should be visible
+    const bulkView = tid(window, 'view-bulk');
+    await expect(bulkView).toBeVisible();
   });
 });

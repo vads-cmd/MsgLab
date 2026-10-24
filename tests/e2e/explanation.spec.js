@@ -1,79 +1,85 @@
-const { test, expect, _electron: electron } = require('@playwright/test');
-const { HL7_MESSAGES, waitForWindow, pasteMessage, clickTab, getExplanationResults, goTo } = require('./helpers');
+const { test, expect } = require('@playwright/test');
+const {
+  HL7_MESSAGES, waitForWindow, pasteMessage, clickTab, getExplanationResults,
+  getExplanationSegmentCount, getExplanationSegmentName, getExplanationSegmentDesc,
+  generateMessage, getPlaceholder, clearDirtyState, closeApp, tid,
+  launchApp, takeScreenshotOnFailure,
+} = require('./helpers');
 
 test.describe('Message Explanation', () => {
   let electronApp;
   let window;
 
   test.beforeEach(async () => {
-    electronApp = await electron.launch({ args: ['.'] });
+    electronApp = await launchApp();
     window = await waitForWindow(electronApp);
+    // Clear dirty state so the unsaved-changes modal never blocks this test
+    await clearDirtyState(window);
   });
 
-  test.afterEach(async () => {
-    await require("./helpers").closeApp(electronApp);
+  test.afterEach(async ({}, testInfo) => {
+    if (testInfo.status !== testInfo.expectedStatus) {
+      await takeScreenshotOnFailure(window, testInfo);
+    }
+    await closeApp(electronApp);
   });
 
   test('shows placeholder on empty message', async () => {
     await clickTab(window, 'explain');
-    const text = await getExplanationResults(window);
+    const text = await getPlaceholder(window, 'explain');
     expect(text).toContain('The explanation will appear here');
   });
 
   test('explains valid ADT^A01 message', async () => {
     await pasteMessage(window, HL7_MESSAGES.ADT_A01);
     await clickTab(window, 'explain');
-    await window.waitForTimeout(500);
 
     // Should show narrative
     const text = await getExplanationResults(window);
     expect(text).toBeTruthy();
 
     // Should show segment details
-    const segments = await window.locator('#panel-explain .segment').count();
+    const segments = await getExplanationSegmentCount(window);
     expect(segments).toBeGreaterThan(0);
   });
 
   test('shows segment names and descriptions', async () => {
     await pasteMessage(window, HL7_MESSAGES.ADT_A01);
     await clickTab(window, 'explain');
-    await window.waitForTimeout(500);
 
-    // Should show MSH segment
-    const mshSegment = await window.locator('#panel-explain .segment .seg-name').first().textContent();
-    expect(mshSegment).toBe('MSH');
+    // First segment should be MSH
+    const firstSegmentName = await getExplanationSegmentName(window, 1);
+    expect(firstSegmentName).toBe('MSH');
   });
 
   test('shows field names and values', async () => {
     await pasteMessage(window, HL7_MESSAGES.ADT_A01);
     await clickTab(window, 'explain');
-    await window.waitForTimeout(500);
 
-    // Should show field rows with names and values
-    const fieldNames = await window.locator('#panel-explain .f-name').allTextContents();
+    // Field names use data-testid ending with "-name"
+    const fieldNames = await window.locator('[data-testid$="-name"]').allTextContents();
     expect(fieldNames.length).toBeGreaterThan(0);
 
-    const fieldValues = await window.locator('#panel-explain .f-display').allTextContents();
+    // Field displays use data-testid ending with "-display"
+    const fieldValues = await window.locator('[data-testid$="-display"]').allTextContents();
     expect(fieldValues.length).toBeGreaterThan(0);
   });
 
   test('explains ORU^R01 message with OBX segment', async () => {
     await pasteMessage(window, HL7_MESSAGES.ORU_R01);
     await clickTab(window, 'explain');
-    await window.waitForTimeout(500);
 
     const text = await getExplanationResults(window);
     expect(text).toBeTruthy();
 
-    // Should have multiple segments
-    const segments = await window.locator('#panel-explain .segment').count();
+    // Should have multiple segments (MSH, PID, OBR, OBX)
+    const segments = await getExplanationSegmentCount(window);
     expect(segments).toBeGreaterThanOrEqual(3);
   });
 
   test('explains message with component chips', async () => {
     await pasteMessage(window, HL7_MESSAGES.ADT_A01);
     await clickTab(window, 'explain');
-    await window.waitForTimeout(500);
 
     // Some fields have components that are shown as chips
     const text = await getExplanationResults(window);
@@ -82,14 +88,10 @@ test.describe('Message Explanation', () => {
 
   test('explains generated message', async () => {
     // Generate a message first
-    await goTo(window, 'generate');
-    await window.selectOption('#gen-type', 'ADT^A01');
-    await window.click('#generator button[type="submit"]');
-    await window.waitForTimeout(500);
+    await generateMessage(window, { messageType: 'ADT^A01' });
 
     // Switch to explain tab
     await clickTab(window, 'explain');
-    await window.waitForTimeout(500);
 
     const text = await getExplanationResults(window);
     expect(text).toBeTruthy();
@@ -98,20 +100,22 @@ test.describe('Message Explanation', () => {
   test('shows field data types', async () => {
     await pasteMessage(window, HL7_MESSAGES.ADT_A01);
     await clickTab(window, 'explain');
-    await window.waitForTimeout(500);
 
-    // Should show data types for fields
-    const fieldTypes = await window.locator('#panel-explain .f-type').allTextContents();
+    // Data types use data-testid ending with "-type"
+    const fieldTypes = await window.locator('[data-testid$="-type"]').allTextContents();
     expect(fieldTypes.length).toBeGreaterThan(0);
   });
 
   test('explains message with multiple segments', async () => {
     await pasteMessage(window, HL7_MESSAGES.ADT_A01);
     await clickTab(window, 'explain');
-    await window.waitForTimeout(500);
 
     // ADT^A01 has MSH, EVN, PID, PV1 segments
-    const segmentNames = await window.locator('#panel-explain .seg-name').allTextContents();
+    const segmentNames = [];
+    for (let i = 1; i <= 4; i++) {
+      const name = await getExplanationSegmentName(window, i);
+      segmentNames.push(name);
+    }
     expect(segmentNames).toContain('MSH');
     expect(segmentNames).toContain('PID');
   });
@@ -120,40 +124,52 @@ test.describe('Message Explanation', () => {
     // First paste ADT^A01
     await pasteMessage(window, HL7_MESSAGES.ADT_A01);
     await clickTab(window, 'explain');
-    await window.waitForTimeout(500);
 
-    let segments = await window.locator('#panel-explain .segment').count();
+    let segments = await getExplanationSegmentCount(window);
     expect(segments).toBeGreaterThan(0);
 
     // Then paste ORU^R01
     await pasteMessage(window, HL7_MESSAGES.ORU_R01);
-    await window.waitForTimeout(500);
 
-    segments = await window.locator('#panel-explain .segment').count();
+    segments = await getExplanationSegmentCount(window);
     expect(segments).toBeGreaterThan(0);
   });
 
   test('shows segment descriptions', async () => {
     await pasteMessage(window, HL7_MESSAGES.ADT_A01);
     await clickTab(window, 'explain');
-    await window.waitForTimeout(500);
 
-    // Each segment should have a description
-    const descriptions = await window.locator('#panel-explain .seg-desc').allTextContents();
-    expect(descriptions.length).toBeGreaterThan(0);
-    // Descriptions should not be empty
-    expect(descriptions[0].trim()).not.toBe('');
+    // First segment should have a non-empty description
+    const desc = await getExplanationSegmentDesc(window, 1);
+    expect(desc.trim()).not.toBe('');
   });
 
   test('explains ORM^O01 message', async () => {
     await pasteMessage(window, HL7_MESSAGES.ORM_O01);
     await clickTab(window, 'explain');
-    await window.waitForTimeout(500);
 
     const text = await getExplanationResults(window);
     expect(text).toBeTruthy();
 
-    const segments = await window.locator('#panel-explain .segment').count();
+    const segments = await getExplanationSegmentCount(window);
     expect(segments).toBeGreaterThan(0);
+  });
+
+  test('shows narrative text', async () => {
+    await pasteMessage(window, HL7_MESSAGES.ADT_A01);
+    await clickTab(window, 'explain');
+
+    // Narrative paragraph should be visible
+    const narrative = tid(window, 'explain-narrative');
+    await expect(narrative).toBeVisible();
+  });
+
+  test('shows facts list', async () => {
+    await pasteMessage(window, HL7_MESSAGES.ADT_A01);
+    await clickTab(window, 'explain');
+
+    // Facts list should be visible
+    const facts = tid(window, 'explain-facts');
+    await expect(facts).toBeVisible();
   });
 });

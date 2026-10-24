@@ -1,58 +1,63 @@
-const { test, expect, _electron: electron } = require('@playwright/test');
-const { HL7_MESSAGES, waitForWindow, pasteMessage, clickTab, getValidationResults, getMessageText } = require('./helpers');
+const { test, expect } = require('@playwright/test');
+const {
+  HL7_MESSAGES, waitForWindow, pasteMessage, clickTab, getValidationResults,
+  getValidationBadge, getValidationIssueCount, getPlaceholder,
+  clearDirtyState, closeApp, tid,
+  launchApp, takeScreenshotOnFailure,
+} = require('./helpers');
 
 test.describe('Error Handling', () => {
   let electronApp;
   let window;
 
   test.beforeEach(async () => {
-    electronApp = await electron.launch({ args: ['.'] });
+    electronApp = await launchApp();
     window = await waitForWindow(electronApp);
+    // Clear dirty state so the unsaved-changes modal never blocks this test
+    await clearDirtyState(window);
   });
 
-  test.afterEach(async () => {
-    await require("./helpers").closeApp(electronApp);
+  test.afterEach(async ({}, testInfo) => {
+    if (testInfo.status !== testInfo.expectedStatus) {
+      await takeScreenshotOnFailure(window, testInfo);
+    }
+    await closeApp(electronApp);
   });
 
   test('handles empty message gracefully', async () => {
     await pasteMessage(window, HL7_MESSAGES.EMPTY);
-    await window.waitForTimeout(500);
 
-    const text = await getValidationResults(window);
+    const text = await getPlaceholder(window, 'validation');
     expect(text).toContain('Validation results will appear here');
   });
 
   test('handles whitespace-only message', async () => {
     await pasteMessage(window, HL7_MESSAGES.WHITESPACE);
-    await window.waitForTimeout(500);
 
-    const text = await getValidationResults(window);
+    const text = await getPlaceholder(window, 'validation');
     expect(text).toContain('Validation results will appear here');
   });
 
   test('handles invalid HL7 message', async () => {
     await pasteMessage(window, HL7_MESSAGES.INVALID);
-    await window.waitForTimeout(500);
 
-    const badge = await window.locator('#panel-validation .badge.bad').textContent();
+    const badge = await getValidationBadge(window);
     expect(badge).toBe('Not valid');
 
     // Should show errors
-    const issues = await window.locator('#panel-validation .issue.error').count();
+    const issues = await getValidationIssueCount(window, 'error');
     expect(issues).toBeGreaterThan(0);
   });
 
   test('handles malformed HL7 message', async () => {
     await pasteMessage(window, HL7_MESSAGES.MALFORMED);
-    await window.waitForTimeout(500);
 
-    const badge = await window.locator('#panel-validation .badge.bad').textContent();
+    const badge = await getValidationBadge(window);
     expect(badge).toBe('Not valid');
   });
 
   test('handles single line message', async () => {
     await pasteMessage(window, 'MSH|^~\\&|SENDER|FACILITY|RECEIVER|FACILITY|20261024120000||ADT^A01|MSG0001|T|2.5.1');
-    await window.waitForTimeout(500);
 
     // Should show validation results
     const text = await getValidationResults(window);
@@ -62,11 +67,10 @@ test.describe('Error Handling', () => {
   test('handles message with special characters', async () => {
     const specialMessage = [
       'MSH|^~\\&|HIS|MAINHOSP|EHR|MAINHOSP|20261024120000||ADT^A01|MSG0001|T|2.5.1',
-      'PID|1||12345^^^HOSP^MR||O\'BRIEN^JOHN^A||19800412|M',
+      "PID|1||12345^^^HOSP^MR||O'BRIEN^JOHN^A||19800412|M",
     ].join('\r');
 
     await pasteMessage(window, specialMessage);
-    await window.waitForTimeout(500);
 
     // Should not crash
     const text = await getValidationResults(window);
@@ -92,35 +96,30 @@ test.describe('Error Handling', () => {
   test('app remains responsive after invalid input', async () => {
     // Paste invalid message
     await pasteMessage(window, HL7_MESSAGES.INVALID);
-    await window.waitForTimeout(500);
 
     // Try to switch tabs - should work
     await clickTab(window, 'explain');
-    await window.waitForTimeout(300);
 
-    const explainTab = await window.locator('#tab-explain').getAttribute('class');
-    expect(explainTab).toContain('active');
+    const explainTab = tid(window, 'tab-explain');
+    await expect(explainTab).toHaveAttribute('aria-selected', 'true');
   });
 
   test('recovers from invalid to valid message', async () => {
     // Paste invalid message
     await pasteMessage(window, HL7_MESSAGES.INVALID);
-    await window.waitForTimeout(500);
 
-    let badge = await window.locator('#panel-validation .badge.bad').textContent();
+    let badge = await getValidationBadge(window);
     expect(badge).toBe('Not valid');
 
     // Paste valid message
     await pasteMessage(window, HL7_MESSAGES.ADT_A01);
-    await window.waitForTimeout(500);
 
-    badge = await window.locator('#panel-validation .badge.ok').textContent();
+    badge = await getValidationBadge(window);
     expect(badge).toBe('Valid');
   });
 
   test('handles message with only MSH segment', async () => {
     await pasteMessage(window, 'MSH|^~\\&|HIS|MAINHOSP|EHR|MAINHOSP|20261024120000||ADT^A01|MSG0001|T|2.5.1');
-    await window.waitForTimeout(500);
 
     // Should show validation results
     const text = await getValidationResults(window);
@@ -134,7 +133,6 @@ test.describe('Error Handling', () => {
     ].join('\r');
 
     await pasteMessage(window, missingFields);
-    await window.waitForTimeout(500);
 
     // Should show validation results with warnings or errors
     const text = await getValidationResults(window);
@@ -149,7 +147,6 @@ test.describe('Error Handling', () => {
     ].join('\r');
 
     await pasteMessage(window, extraSegments);
-    await window.waitForTimeout(500);
 
     // Should not crash
     const text = await getValidationResults(window);
@@ -165,7 +162,6 @@ test.describe('Error Handling', () => {
     ].join('\r');
 
     await pasteMessage(window, emptySegments);
-    await window.waitForTimeout(500);
 
     // Should not crash
     const text = await getValidationResults(window);
@@ -178,18 +174,16 @@ test.describe('Error Handling', () => {
       await pasteMessage(window, HL7_MESSAGES.ADT_A01);
       await pasteMessage(window, HL7_MESSAGES.INVALID);
     }
-    await window.waitForTimeout(500);
 
     // App should still be responsive
-    const textarea = await window.locator('#message').isVisible();
-    expect(textarea).toBe(true);
+    const textarea = tid(window, 'message');
+    await expect(textarea).toBeVisible();
   });
 
   test('shows error count in validation tab label', async () => {
     await pasteMessage(window, HL7_MESSAGES.INVALID);
-    await window.waitForTimeout(500);
 
-    const tabLabel = await window.locator('#tab-validation').textContent();
+    const tabLabel = await tid(window, 'tab-validation').textContent();
     expect(tabLabel).toContain('Validation (');
     // Should contain a number
     expect(tabLabel).toMatch(/\d/);
@@ -202,7 +196,6 @@ test.describe('Error Handling', () => {
     ].join('\r');
 
     await pasteMessage(window, nonAsciiMessage);
-    await window.waitForTimeout(500);
 
     // Should not crash
     const text = await getValidationResults(window);
@@ -211,9 +204,8 @@ test.describe('Error Handling', () => {
 
   test('validation tab shows zero problems for valid message', async () => {
     await pasteMessage(window, HL7_MESSAGES.ADT_A01);
-    await window.waitForTimeout(500);
 
-    const tabLabel = await window.locator('#tab-validation').textContent();
+    const tabLabel = await tid(window, 'tab-validation').textContent();
     expect(tabLabel).toBe('Validation');
   });
 });

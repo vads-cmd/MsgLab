@@ -1024,6 +1024,9 @@ document.getElementById('about-repo').addEventListener('click', (event) => {
   window.hl7.openRepository().catch(console.error);
 });
 
+// The logo in the header opens it too (the Help menu has the same item)
+document.getElementById('about-open').addEventListener('click', () => showAbout().catch(console.error));
+
 // A click on the dark area around the window closes it
 aboutDialog.addEventListener('click', (event) => {
   if (event.target === aboutDialog) aboutDialog.close();

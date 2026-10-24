@@ -1,12 +1,13 @@
 {
   "name": "msglab",
   "productName": "MsgLab",
-  "version": "0.1.18",
+  "version": "0.1.20",
   "description": "Generate, validate, explain and (later) send HL7 v2 messages for testing",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "test": "node --test",
+    "pretest:e2e": "node -e \"for (const dir of ['allure-results', 'allure-report', 'playwright-report', 'test-results']) require('node:fs').rmSync(dir, { recursive: true, force: true })\"",
     "test:e2e": "playwright test",
     "test:all": "npm test && npm run test:e2e",
     "allure:generate": "allure generate allure-results --clean -o allure-report",

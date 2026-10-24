@@ -1,24 +1,34 @@
-const { test, expect, _electron: electron } = require('@playwright/test');
-const { HL7_MESSAGES, waitForWindow, pasteMessage, generateMessage, getMessageText } = require('./helpers');
+const { test, expect } = require('@playwright/test');
+const {
+  HL7_MESSAGES, waitForWindow, pasteMessage, generateMessage, getMessageText,
+  getValidationBadge, getGenStatus, clickFavorite, isFavorited,
+  clearDirtyState, closeApp, tid,
+  launchApp, takeScreenshotOnFailure,
+} = require('./helpers');
 
 test.describe('Message Generation', () => {
   let electronApp;
   let window;
 
   test.beforeEach(async () => {
-    electronApp = await electron.launch({ args: ['.'] });
+    electronApp = await launchApp();
     window = await waitForWindow(electronApp);
+    // Clear dirty state so the unsaved-changes modal never blocks this test
+    await clearDirtyState(window);
   });
 
-  test.afterEach(async () => {
-    await require("./helpers").closeApp(electronApp);
+  test.afterEach(async ({}, testInfo) => {
+    if (testInfo.status !== testInfo.expectedStatus) {
+      await takeScreenshotOnFailure(window, testInfo);
+    }
+    await closeApp(electronApp);
   });
 
   test('generates ADT^A01 message with defaults', async () => {
     await generateMessage(window);
 
     // Check status message
-    const status = await window.locator('#gen-status').textContent();
+    const status = await getGenStatus(window);
     expect(status).toContain('Generated');
     expect(status).toContain('ADT');
 
@@ -32,7 +42,7 @@ test.describe('Message Generation', () => {
   test('generates ADT^A02 message', async () => {
     await generateMessage(window, { messageType: 'ADT^A02' });
 
-    const status = await window.locator('#gen-status').textContent();
+    const status = await getGenStatus(window);
     expect(status).toContain('ADT');
 
     const message = await getMessageText(window);
@@ -44,6 +54,34 @@ test.describe('Message Generation', () => {
 
     const message = await getMessageText(window);
     expect(message).toContain('ADT^A03');
+  });
+
+  test('generates ADT^A08 message', async () => {
+    await generateMessage(window, { messageType: 'ADT^A08' });
+
+    const message = await getMessageText(window);
+    expect(message).toContain('ADT^A08');
+  });
+
+  test('generates ADT^A18 message', async () => {
+    await generateMessage(window, { messageType: 'ADT^A18' });
+
+    const message = await getMessageText(window);
+    expect(message).toContain('ADT^A18');
+  });
+
+  test('generates ADT^A40 message', async () => {
+    await generateMessage(window, { messageType: 'ADT^A40' });
+
+    const message = await getMessageText(window);
+    expect(message).toContain('ADT^A40');
+  });
+
+  test('generates ADT^A60 message', async () => {
+    await generateMessage(window, { messageType: 'ADT^A60' });
+
+    const message = await getMessageText(window);
+    expect(message).toContain('ADT^A60');
   });
 
   test('generates ORU^R01 message', async () => {
@@ -91,16 +129,15 @@ test.describe('Message Generation', () => {
   test('generates message with custom seed', async () => {
     await generateMessage(window, { sendingApp: 'HIS' });
 
-    const status = await window.locator('#gen-status').textContent();
+    const status = await getGenStatus(window);
     expect(status).toContain('seed');
   });
 
   test('generated message is automatically validated', async () => {
     await generateMessage(window);
-    await window.waitForTimeout(500);
 
     // The generated message should be valid
-    const badge = await window.locator('#panel-validation .badge.ok').textContent();
+    const badge = await getValidationBadge(window);
     expect(badge).toBe('Valid');
   });
 
@@ -119,14 +156,13 @@ test.describe('Message Generation', () => {
   test('shows generation status with seed', async () => {
     await generateMessage(window);
 
-    const status = await window.locator('#gen-status').textContent();
+    const status = await getGenStatus(window);
     expect(status).toContain('seed');
   });
 
   test('generates ACK message type', async () => {
     // First paste a message to ACK
     await pasteMessage(window, HL7_MESSAGES.ADT_A01);
-    await window.waitForTimeout(500);
 
     // Then generate ACK
     await generateMessage(window, { messageType: 'ACK' });
@@ -142,5 +178,33 @@ test.describe('Message Generation', () => {
       const message = await getMessageText(window);
       expect(message).toContain(version);
     }
+  });
+
+  test('favorite button toggles star', async () => {
+    // Navigate to generate view
+    await window.click('[data-testid="nav-generate"]');
+    await window.waitForTimeout(200);
+
+    // Initial state: not favorited (empty star)
+    const before = await isFavorited(window);
+    expect(before).toBe(false);
+
+    // Click favorite
+    await clickFavorite(window);
+    const after = await isFavorited(window);
+    expect(after).toBe(true);
+
+    // Click again to unfavorite
+    await clickFavorite(window);
+    const again = await isFavorited(window);
+    expect(again).toBe(false);
+  });
+
+  test('all empty checkbox is visible', async () => {
+    await window.click('[data-testid="nav-generate"]');
+    await window.waitForTimeout(200);
+
+    const checkbox = tid(window, 'gen-all-empty');
+    await expect(checkbox).toBeVisible();
   });
 });

@@ -78,6 +78,16 @@ body {
   background: var(--panel);
 }
 
+.logo-button {
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+}
+.logo-button:hover:not(:disabled) { filter: brightness(1.1); }
+
 .app-logo {
   width: 28px;
   height: 28px;
