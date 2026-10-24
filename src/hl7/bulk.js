@@ -100,4 +100,4 @@ function generateBulk(raw = {}) {
   };
 }
 
-module.exports = { generateBulk, BULK_TYPES, MAX_COUNT };
+module.exports = { generateBulk, patientLabel, BULK_TYPES, MAX_COUNT };

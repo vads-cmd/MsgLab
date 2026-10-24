@@ -3,19 +3,19 @@
 /**
  * Minimal HL7 v2 parser.
  *
- * Every segment, field, repetition and component keeps its absolute character
+ * Every segment, field, repetition, and component keeps its absolute character
  * offsets in the parsed text, so the UI can later point at the exact spot.
  *
- *   message  { text, delims, encoding, segments[] }
- *   segment  { name, index, start, end, raw, fields[] }   fields[n] = field n (fields[0] unused)
- *   field    { seq, raw, start, end, reps[] }
- *   rep      { raw, start, end, comps[] }
- *   comp     { raw, start, end, subs[] }
+ *   message { text, delims, encoding, segments[] }
+ *   segment { name, index, start, end, raw, fields[] } fields[n] = field n (fields[0] unused)
+ *   field { seq, raw, start, end, reps[] }
+ *   rep { raw, start, end, comps[] }
+ *   comp { raw, start, end, subs[] }
  */
 
 const DEFAULT_DELIMS = Object.freeze({ field: '|', comp: '^', rep: '~', esc: '\\', sub: '&' });
 
-/** Split text into non-empty lines (CR, LF or CRLF), remembering where each one starts. */
+/** Split text into non-empty lines (CR, LF, or CRLF), remembering where each one starts. */
 function splitLines(text) {
   const lines = [];
   const n = text.length;
@@ -105,30 +105,55 @@ function parseSegment(line, d, index) {
   return seg;
 }
 
+/** The separators from the MSH line: MSH-1 is the field separator, MSH-2 holds the four encoding characters. */
+function readDelimiters(firstLine) {
+  const field = firstLine[3];
+  const rest = firstLine.slice(4);
+  const end = rest.indexOf(field);
+  const encoding = end === -1 ? rest : rest.slice(0, end);
+  const delims = {
+    field,
+    comp: encoding[0] ?? DEFAULT_DELIMS.comp,
+    rep: encoding[1] ?? DEFAULT_DELIMS.rep,
+    esc: encoding[2] ?? DEFAULT_DELIMS.esc,
+    sub: encoding[3] ?? DEFAULT_DELIMS.sub,
+  };
+  return { delims, encoding };
+}
+
 function parseMessage(text) {
   text = String(text == null ? '' : text);
   const lines = splitLines(text);
-  const msg = { text, delims: { ...DEFAULT_DELIMS }, encoding: null, segments: [] };
-  if (lines.length && lines[0].text.startsWith('MSH') && lines[0].text.length >= 4) {
-    const first = lines[0].text;
-    msg.delims.field = first[3];
-    const rest = first.slice(4);
-    const idx = rest.indexOf(msg.delims.field);
-    const enc = idx === -1 ? rest : rest.slice(0, idx);
-    msg.encoding = enc;
-    if (enc.length >= 1) msg.delims.comp = enc[0];
-    if (enc.length >= 2) msg.delims.rep = enc[1];
-    if (enc.length >= 3) msg.delims.esc = enc[2];
-    if (enc.length >= 4) msg.delims.sub = enc[3];
-  }
+  const hasMsh = lines.length > 0 && lines[0].text.startsWith('MSH') && lines[0].text.length >= 4;
+  const { delims, encoding } = hasMsh ? readDelimiters(lines[0].text) : { delims: { ...DEFAULT_DELIMS }, encoding: null };
+  const msg = { text, delims, encoding, segments: [] };
   lines.forEach((ln, i) => msg.segments.push(parseSegment(ln, msg.delims, i)));
   return msg;
 }
 
-const PATH_RE = /^([A-Za-z0-9]{3})(?:\[(\d+)\])?-(\d+)(?:\((\d+)\))?(?:\.(\d+))?(?:\.(\d+))?$/;
+/**
+ * Split text that holds several messages (one file, or MLLP frames one after another) into
+ * separate messages. A new message starts at every MSH segment; the file and batch envelope
+ * segments (FHS, BHS, BTS, FTS) are left out. Lines end up joined with "\n".
+ */
+function splitMessages(text) {
+  const messages = [];
+  let current = null;
+  for (const { text: line } of splitLines(String(text ?? ''))) {
+    if (/^(FHS|BHS|BTS|FTS)[^A-Za-z0-9]/.test(line)) continue;
+    if (current === null || line.startsWith('MSH')) {
+      current = [];
+      messages.push(current);
+    }
+    current.push(line);
+  }
+  return messages.map((lines) => lines.join('\n'));
+}
+
+const PATH_RE = /^([A-Za-z0-9]{3})(?:\[(\d+)])?-(\d+)(?:\((\d+)\))?(?:\.(\d+))?(?:\.(\d+))?$/;
 
 /**
- * Read a value by path: "PID-5.1", "OBX[2]-5" (second OBX), "PID-3(2).1" (second repetition).
+ * Read a value by the path: "PID-5.1", "OBX[2]-5" (second OBX), "PID-3(2).1" (second repetition).
  * Occurrences and repetitions are 1-based. Returns '' when the value does not exist.
  */
 function get(msg, path, { unescaped = false } = {}) {
@@ -189,4 +214,4 @@ function unescape(str, d = DEFAULT_DELIMS) {
   return out;
 }
 
-module.exports = { DEFAULT_DELIMS, splitLines, splitAt, parseMessage, get, unescape };
+module.exports = { DEFAULT_DELIMS, splitLines, splitAt, splitMessages, parseMessage, get, unescape };

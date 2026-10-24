@@ -167,6 +167,7 @@ tabs.forEach((tab) => tab.addEventListener('click', () => selectTab(tab.dataset.
 input.addEventListener('input', () => {
   clearTimeout(timer);
   timer = setTimeout(run, 250);
+  markChanged();
 });
 
 showPlaceholders();
@@ -201,6 +202,7 @@ async function generateMessage() {
     if (!result.ok) throw new Error(result.error);
     replacedText = type === 'ACK' ? previous : null;
     restoreButton.hidden = replacedText === null;
+    detachFile();
     input.value = result.text;
     input.scrollTop = 0;
     const manualNote = result.manual.length ? ` · ${plural(result.manual.length, 'manual value')}` : '';
@@ -218,6 +220,7 @@ restoreButton.addEventListener('click', () => {
   input.value = replacedText;
   replacedText = null;
   restoreButton.hidden = true;
+  detachFile();
   genStatus.textContent = 'Original message restored';
   clearTimeout(timer);
   run().catch(console.error);
@@ -226,6 +229,153 @@ restoreButton.addEventListener('click', () => {
 generatorForm.addEventListener('submit', (event) => {
   event.preventDefault();
   generateMessage().catch(console.error);
+});
+
+/* ---- saving ---- */
+
+const fileStatus = document.getElementById('file-status');
+let savedName = ''; // the file the editor is tied to; empty until the first save
+let changedSinceSave = false;
+
+function updateTitle() {
+  const name = savedName ? `${savedName} - ` : '';
+  document.title = `${changedSinceSave && savedName ? '* ' : ''}${name}HL7 Workbench`;
+}
+
+// The main process asks before a window with unsaved changes is closed or its text replaced
+let lastDirtySent = false;
+function syncDirty() {
+  const dirty = changedSinceSave && input.value.trim() !== '';
+  if (dirty === lastDirtySent) return;
+  lastDirtySent = dirty;
+  window.hl7.setDirty(dirty).catch(console.error);
+}
+
+function markChanged() {
+  changedSinceSave = true;
+  updateTitle();
+  syncDirty();
+}
+
+/** The editor now holds something new (generated, answered, picked from a list): Save must ask for a file again. */
+function detachFile() {
+  savedName = '';
+  changedSinceSave = false;
+  updateTitle();
+  syncDirty();
+  window.hl7.forgetFile().catch(console.error);
+}
+
+async function saveMessage(mode) {
+  fileStatus.classList.remove('error');
+  fileStatus.textContent = '';
+  try {
+    const result = await window.hl7.saveMessage({
+      text: input.value,
+      mode: savedName ? mode : 'saveAs',
+      lineEnding: fieldValue('file-eol'),
+      encoding: fieldValue('file-encoding'),
+      mllp: document.getElementById('file-mllp').checked,
+    });
+    if (result.canceled) return;
+    if (!result.ok) throw new Error(result.error);
+    savedName = result.fileName;
+    changedSinceSave = false;
+    updateTitle();
+    syncDirty();
+    const warning = result.warning ? ` - ${result.warning}` : '';
+    fileStatus.textContent = `Saved ${result.fileName} (${result.bytes} bytes)${warning}`;
+  } catch (err) {
+    fileStatus.classList.add('error');
+    fileStatus.textContent = err.message;
+  }
+}
+
+document.getElementById('file-save').addEventListener('click', () => saveMessage('save').catch(console.error));
+document.getElementById('file-save-as').addEventListener('click', () => saveMessage('saveAs').catch(console.error));
+
+/* ---- opening ---- */
+
+function applyOpened(result) {
+  const { messages, format, notes } = result;
+  if (format.lineEnding) document.getElementById('file-eol').value = format.lineEnding;
+  document.getElementById('file-encoding').value = format.encoding;
+  document.getElementById('file-mllp').checked = format.mllp;
+  replacedText = null;
+  restoreButton.hidden = true;
+  input.value = messages[0].text;
+  input.scrollTop = 0;
+  const many = messages.length > 1;
+  if (many) {
+    showBulkResult({ summary: `${result.fileName}: ${plural(messages.length, 'message')}${result.batch ? ' (batch file)' : ''}`, messages });
+    document.getElementById('bulk').open = true;
+  }
+  if (result.tied) {
+    savedName = result.fileName;
+    changedSinceSave = false;
+    updateTitle();
+    syncDirty();
+  } else {
+    detachFile();
+  }
+  const listed = many ? ` - ${plural(messages.length, 'message')}, listed under Bulk generation; the first one is shown` : '';
+  fileStatus.textContent = ['Opened ', result.fileName, listed, ...notes.map((note) => ` - ${note}`)].join('');
+  clearTimeout(timer);
+  run().catch(console.error);
+}
+
+async function runOpen(request) {
+  fileStatus.classList.remove('error');
+  fileStatus.textContent = '';
+  try {
+    const result = await request();
+    if (result.canceled) return false;
+    if (!result.ok) throw new Error(result.error);
+    applyOpened(result);
+    return true;
+  } catch (err) {
+    fileStatus.classList.add('error');
+    fileStatus.textContent = err.message;
+    return false;
+  }
+}
+
+const openFromDialog = () => runOpen(() => window.hl7.openFile());
+document.getElementById('file-open').addEventListener('click', () => openFromDialog().catch(console.error));
+
+const dropPane = input.closest('.pane');
+const hasFiles = (event) => Array.from(event.dataTransfer?.types ?? []).includes('Files');
+document.addEventListener('dragover', (event) => {
+  if (!hasFiles(event)) return;
+  event.preventDefault();
+  dropPane.classList.add('drop-target');
+});
+document.addEventListener('dragleave', (event) => {
+  if (event.relatedTarget === null) dropPane.classList.remove('drop-target');
+});
+document.addEventListener('drop', (event) => {
+  if (!hasFiles(event)) return;
+  event.preventDefault();
+  dropPane.classList.remove('drop-target');
+  const dropped = Array.from(event.dataTransfer.files);
+  if (dropped.length === 0) return;
+  runOpen(async () => window.hl7.openFileData({ name: dropped[0].name, data: await dropped[0].arrayBuffer() }))
+    .then((opened) => {
+      if (opened && dropped.length > 1) fileStatus.textContent += ' - only the first of the dropped files was opened';
+    })
+    .catch(console.error);
+});
+
+document.addEventListener('keydown', (event) => {
+  if (!(event.ctrlKey || event.metaKey)) return;
+  const key = event.key.toLowerCase();
+  if (key === 's') {
+    event.preventDefault();
+    saveMessage(event.shiftKey ? 'saveAs' : 'save').catch(console.error);
+  } else if (key === 'o') {
+    event.preventDefault();
+    openFromDialog().catch(console.error);
+  }
 });
 
 /* ---- bulk generation ---- */
@@ -252,7 +402,8 @@ function buildBulkTypes() {
 
 function showBulkResult(result) {
   bulkMessages = result.messages;
-  document.getElementById('bulk-summary').textContent = `${plural(result.count, 'message')} for ${plural(result.patients, 'patient')} · seed ${result.seed}`;
+  const counts = `${plural(result.count, 'message')} for ${plural(result.patients, 'patient')} · seed ${result.seed}`;
+  document.getElementById('bulk-summary').textContent = result.summary ?? counts;
   document.getElementById('bulk-copy-status').textContent = '';
   const rows = [];
   bulkMessages.slice(0, SHOWN_ROWS).forEach((message, index) => {
@@ -264,6 +415,7 @@ function showBulkResult(result) {
       input.scrollTop = 0;
       replacedText = null;
       restoreButton.hidden = true;
+      detachFile();
       clearTimeout(timer);
       run().catch(console.error);
     });

@@ -98,6 +98,26 @@
   <main class="panes">
     <section class="pane">
       <h2><label for="message">Message</label></h2>
+      <div class="file-bar">
+        <button type="button" id="file-open">Open...</button>
+        <button type="button" id="file-save">Save</button>
+        <button type="button" id="file-save-as">Save as...</button>
+        <label>Line ending
+          <select id="file-eol">
+            <option value="cr" selected>CR (HL7 standard)</option>
+            <option value="lf">LF</option>
+            <option value="crlf">CRLF</option>
+          </select>
+        </label>
+        <label>Encoding
+          <select id="file-encoding">
+            <option value="utf-8" selected>UTF-8</option>
+            <option value="windows-1252">Windows-1252</option>
+          </select>
+        </label>
+        <label class="file-check"><input type="checkbox" id="file-mllp"> Wrap in MLLP</label>
+        <output id="file-status" class="gen-status"></output>
+      </div>
       <textarea id="message" spellcheck="false" wrap="off"
         placeholder="Paste or type an HL7 message here, for example:&#10;MSH|^~\&amp;|SENDER|FACILITY|RECEIVER|FACILITY|20261023120000||ADT^A01|MSG0001|T|2.5.1&#10;PID|1||12345^^^HOSP^MR||DOE^JOHN||19800412|M"></textarea>
     </section>
