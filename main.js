@@ -8,6 +8,7 @@ const { explain } = require('./src/hl7/explainer');
 const { generate } = require('./src/hl7/generator');
 const { generateBulk } = require('./src/hl7/bulk');
 const files = require('./src/files');
+const mllp = require('./src/mllp');
 const settingsStore = require('./src/settings');
 const { buildMenuTemplate } = require('./src/menu');
 const { ABOUT } = require('./src/about');
@@ -93,6 +94,28 @@ function rememberFolder(folder) {
 function applyTheme(value) {
   nativeTheme.themeSource = settingsStore.THEMES.has(value) ? value : 'system';
 }
+
+// Sending: the connection is made here, never in the page. Each request has an ID so it can be cancelled.
+const runningSends = new Map();
+
+async function runSend(payload, { needsMessage, action }) {
+  const request = mllp.cleanRequest(payload, { needsMessage });
+  if (request.error) return { ok: false, outcome: 'invalid-input', message: request.error, warnings: [] };
+  const controller = new AbortController();
+  runningSends.set(request.requestId, controller);
+  try {
+    return await action({ ...request.options, signal: controller.signal });
+  } finally {
+    runningSends.delete(request.requestId);
+  }
+}
+
+ipcMain.handle('mllp:send', (_event, payload) => runSend(payload, { needsMessage: true, action: mllp.sendMessage }));
+ipcMain.handle('mllp:test', (_event, payload) => runSend(payload, { needsMessage: false, action: mllp.testConnection }));
+ipcMain.handle('mllp:cancel', (_event, requestId) => {
+  runningSends.get(asText(requestId))?.abort();
+});
+
 ipcMain.handle('app:setTheme', (_event, value) => {
   applyTheme(value);
   return nativeTheme.themeSource;

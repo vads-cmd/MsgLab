@@ -18,6 +18,11 @@ test('cleanSettings copes with nonsense', () => {
   }
 });
 
+test('the server settings are remembered, the test message box is not', () => {
+  for (const id of ['send-host', 'send-port', 'send-connect-timeout', 'send-reply-timeout', 'send-encoding']) assert.ok(REMEMBERED_CONTROLS.has(id), id);
+  assert.ok(!REMEMBERED_CONTROLS.has('send-test-message'), 'the test message box starts off every time');
+});
+
 test('seed and manual values are not remembered', () => {
   assert.ok(!REMEMBERED_CONTROLS.has('gen-seed'));
   assert.ok(![...REMEMBERED_CONTROLS].some((id) => id.startsWith('manual-') && id !== 'manual-show-optional'));

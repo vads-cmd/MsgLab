@@ -960,6 +960,7 @@ function showView(name) {
     if (active) item.setAttribute('aria-current', 'page');
     else item.removeAttribute('aria-current');
   }
+  if (name === 'send') updateSendSummary();
 }
 
 for (const item of navItems) item.addEventListener('click', () => showView(item.dataset.view));
@@ -1035,3 +1036,158 @@ document.getElementById('about-open').addEventListener('click', () => showAbout(
 aboutDialog.addEventListener('click', (event) => {
   if (event.target === aboutDialog) aboutDialog.close();
 });
+
+/* ---- sending ---- */
+
+const sendGo = document.getElementById('send-go');
+const sendTest = document.getElementById('send-test');
+const sendCancel = document.getElementById('send-cancel');
+const sendStatus = document.getElementById('send-status');
+const sendTestStatus = document.getElementById('send-test-status');
+const sendSummary = document.getElementById('send-message-summary');
+const sendResult = document.getElementById('send-result');
+let sendBusy = false;
+let activeRequestId = null;
+let requestCounter = 0;
+
+/** What the Editor holds, in a few words; null when there is nothing to send. */
+function describeEditorMessage(text) {
+  const lines = text.split(/\r\n|\r|\n/).filter((line) => line.trim() !== '');
+  if (lines.length === 0) return null;
+  let first = lines[0];
+  if (first.codePointAt(0) === 0x0b) first = first.slice(1);
+  const count = `${lines.length} ${lines.length === 1 ? 'segment' : 'segments'}`;
+  if (!first.startsWith('MSH') || first.length < 4) return `Does not start with an MSH segment, ${count}`;
+  const fields = first.split(first[3]);
+  return `${fields[8] || 'type not set'}, control ID ${fields[9] || 'not set'}, ${count}`;
+}
+
+function refreshSendButtons() {
+  const hasMessage = describeEditorMessage(input.value) !== null;
+  sendGo.disabled = sendBusy || !hasMessage;
+  sendTest.disabled = sendBusy;
+  sendCancel.hidden = !sendBusy;
+}
+
+function updateSendSummary() {
+  sendSummary.textContent = describeEditorMessage(input.value) ?? 'The editor is empty. Write or generate a message first.';
+  refreshSendButtons();
+}
+
+/** A result line: green text for success, red for a problem; the words say the same. */
+function showSendLine(element, message, kind) {
+  element.textContent = message;
+  element.classList.toggle('error', kind === 'error');
+  element.classList.toggle('ok', kind === 'ok');
+}
+
+function clearSendResult() {
+  sendResult.hidden = true;
+  document.getElementById('send-warnings').replaceChildren();
+  document.getElementById('send-warnings').hidden = true;
+  document.getElementById('send-ack-text').textContent = '';
+  document.getElementById('send-raw-visible').textContent = '';
+  document.getElementById('send-raw-hex').textContent = '';
+  document.getElementById('send-ack-details').hidden = true;
+  document.getElementById('send-raw-details').hidden = true;
+}
+
+function showSendResult(result) {
+  clearSendResult();
+  const warnings = document.getElementById('send-warnings');
+  for (const warning of result.warnings ?? []) {
+    const item = document.createElement('li');
+    item.textContent = warning;
+    item.dataset.testid = `send-warning-${warnings.children.length + 1}`;
+    warnings.append(item);
+  }
+  warnings.hidden = warnings.children.length === 0;
+  const ackDetails = document.getElementById('send-ack-details');
+  if (result.ackText) {
+    document.getElementById('send-ack-text').textContent = result.ackText.replaceAll('\r', '\n').trimEnd();
+    ackDetails.hidden = false;
+  }
+  const rawDetails = document.getElementById('send-raw-details');
+  if (result.reply?.bytes > 0) {
+    document.getElementById('send-raw-visible').textContent = result.reply.visible;
+    document.getElementById('send-raw-hex').textContent = result.reply.hex;
+    rawDetails.hidden = false;
+  }
+  sendResult.hidden = warnings.hidden && ackDetails.hidden && rawDetails.hidden;
+}
+
+const sendOutcomeText = (result) => (result.ok ? result.message : `Failed: ${result.message}`);
+
+function connectionPayload() {
+  requestCounter += 1;
+  activeRequestId = `req-${Date.now()}-${requestCounter}`;
+  return {
+    requestId: activeRequestId,
+    host: fieldValue('send-host'),
+    port: fieldValue('send-port'),
+    connectTimeoutSeconds: fieldValue('send-connect-timeout'),
+    replyTimeoutSeconds: fieldValue('send-reply-timeout'),
+    encoding: fieldValue('send-encoding'),
+  };
+}
+
+/** Runs one request with the buttons locked; the Cancel button stops the request that is running. */
+async function withSending(task) {
+  sendBusy = true;
+  refreshSendButtons();
+  try {
+    return await task();
+  } finally {
+    activeRequestId = null;
+    sendBusy = false;
+    refreshSendButtons();
+  }
+}
+
+async function sendEditorMessage(statusElement) {
+  const payload = { ...connectionPayload(), message: input.value };
+  showSendLine(statusElement, `Sending to ${payload.host.trim()}:${payload.port}...`, null);
+  const result = await window.hl7.sendMessage(payload);
+  showSendLine(statusElement, sendOutcomeText(result), result.ok ? 'ok' : 'error');
+  showSendResult(result);
+  return result;
+}
+
+async function sendClicked() {
+  clearSendResult();
+  showSendLine(sendTestStatus, '', null);
+  await withSending(() => sendEditorMessage(sendStatus));
+}
+
+async function testClicked() {
+  clearSendResult();
+  showSendLine(sendStatus, '', null);
+  await withSending(async () => {
+    const payload = connectionPayload();
+    showSendLine(sendTestStatus, `Connecting to ${payload.host.trim()}:${payload.port}...`, null);
+    const test = await window.hl7.testConnection(payload);
+    showSendLine(sendTestStatus, sendOutcomeText(test), test.ok ? 'ok' : 'error');
+    if (!test.ok || !document.getElementById('send-test-message').checked) return;
+    if (describeEditorMessage(input.value) === null) {
+      showSendLine(sendTestStatus, `${test.message} The editor is empty, so no test message was sent.`, 'error');
+      return;
+    }
+    const sent = await sendEditorMessage(sendStatus);
+    showSendLine(sendTestStatus, `${test.message} Test message: ${sendOutcomeText(sent)}`, sent.ok ? 'ok' : 'error');
+  });
+}
+
+sendGo.addEventListener('click', () => sendClicked().catch(console.error));
+sendTest.addEventListener('click', () => testClicked().catch(console.error));
+sendCancel.addEventListener('click', () => {
+  if (activeRequestId) window.hl7.cancelSend(activeRequestId).catch(console.error);
+});
+document.getElementById('send-copy-ack').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(document.getElementById('send-ack-text').textContent);
+  } catch (error) {
+    console.error(error);
+  }
+});
+input.addEventListener('input', updateSendSummary);
+updateSendSummary();
