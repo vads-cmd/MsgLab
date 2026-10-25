@@ -1,0 +1,104 @@
+name: Build installers
+
+# Push a tag such as v0.1.29 to build the installers on macOS, Windows and Linux
+# and create a draft pre-release on GitHub with the installers attached.
+# "Run workflow" (manual) builds the same installers as downloadable artifacts only.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build on ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            script: dist:mac
+          - name: Windows
+            os: windows-latest
+            script: dist:win
+          - name: Linux
+            os: ubuntu-latest
+            script: dist:linux
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Check that the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${version}" >&2
+            exit 1
+          fi
+
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build installers
+        run: npm run ${{ matrix.script }} -- --publish never
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            dist/*.dmg
+            dist/*.exe
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+
+  release:
+    name: Create draft release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          merge-multiple: true
+          path: release-files
+
+      - name: List installers
+        run: ls -la release-files
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" release-files/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "MsgLab ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            --draft \
+            --prerelease

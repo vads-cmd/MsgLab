@@ -91,6 +91,7 @@
       ]
     },
     "nsis": {
+      "artifactName": "MsgLab-Setup-${version}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     },

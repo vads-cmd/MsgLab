@@ -78,3 +78,7 @@ test('linux icons are provided in the standard freedesktop sizes', () => {
     assert.equal(header.readUInt32BE(20), size);
   }
 });
+
+test('the Windows installer file name has no spaces (GitHub renames them)', () => {
+  assert.equal(build.nsis.artifactName, 'MsgLab-Setup-${version}.${ext}');
+});
