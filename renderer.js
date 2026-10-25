@@ -657,8 +657,10 @@ exportMode.addEventListener('change', syncExportControls);
 document.getElementById('file-mllp').addEventListener('change', syncExportControls);
 syncExportControls();
 
+// A progress message can reach the page after the export has finished; it must not replace the result
+let exportRunning = false;
 window.hl7.onExportProgress(({ done, total }) => {
-  exportStatus.textContent = `Writing files: ${done} of ${total}`;
+  if (exportRunning) exportStatus.textContent = `Writing files: ${done} of ${total}`;
 });
 
 async function exportMessages() {
@@ -666,6 +668,7 @@ async function exportMessages() {
   exportStatus.textContent = '';
   const button = document.getElementById('export-run');
   button.disabled = true;
+  exportRunning = true;
   try {
     const result = await window.hl7.exportMessages({
       messages: bulkMessages.map((message) => message.text),
@@ -685,6 +688,7 @@ async function exportMessages() {
     exportStatus.classList.add('error');
     exportStatus.textContent = err.message;
   } finally {
+    exportRunning = false;
     button.disabled = false;
   }
 }

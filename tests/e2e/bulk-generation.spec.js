@@ -9,7 +9,9 @@ const {
 } = require('./helpers');
 
 test.describe('Bulk Generation', () => {
+  /** @type {import('@playwright/test').ElectronApplication} */
   let electronApp;
+  /** @type {import('@playwright/test').Page} */
   let window;
 
   test.beforeEach(async () => {

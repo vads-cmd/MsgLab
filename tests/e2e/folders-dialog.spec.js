@@ -12,7 +12,9 @@ const {
 const UNSET = 'Not set - the last used folder is used';
 
 test.describe('Default folders', () => {
+  /** @type {import('@playwright/test').ElectronApplication} */
   let electronApp;
+  /** @type {import('@playwright/test').Page} */
   let window;
   let dir;
   let other;

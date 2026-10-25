@@ -7,7 +7,9 @@ const {
 } = require('./helpers');
 
 test.describe('Message Explanation', () => {
+  /** @type {import('@playwright/test').ElectronApplication} */
   let electronApp;
+  /** @type {import('@playwright/test').Page} */
   let window;
 
   test.beforeEach(async () => {

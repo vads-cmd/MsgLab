@@ -9,7 +9,9 @@ const {
 // The theme dropdown must really change the look of the app (not only its value), and be remembered.
 
 test.describe('Theme', () => {
+  /** @type {import('@playwright/test').ElectronApplication} */
   let electronApp;
+  /** @type {import('@playwright/test').Page} */
   let window;
   let dataDir;
 

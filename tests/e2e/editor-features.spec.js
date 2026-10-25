@@ -9,7 +9,9 @@ const SEGMENTS = HL7_MESSAGES.ADT_A01.split('\r');
 const pidOf = (text) => text.split(/\r\n|\r|\n/).find((line) => line.startsWith('PID|')).split('|');
 
 test.describe('Editor and generator details', () => {
+  /** @type {import('@playwright/test').ElectronApplication} */
   let electronApp;
+  /** @type {import('@playwright/test').Page} */
   let window;
 
   test.beforeEach(async () => {

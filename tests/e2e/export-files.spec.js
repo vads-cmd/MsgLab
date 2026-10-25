@@ -14,7 +14,9 @@ const lines = (bytes) => bytes.toString('utf8').split(/\r\n|\r|\n/).filter(Boole
 const startingWith = (all, prefix) => all.filter((line) => line.startsWith(prefix));
 
 test.describe('Exporting the bulk list', () => {
+  /** @type {import('@playwright/test').ElectronApplication} */
   let electronApp;
+  /** @type {import('@playwright/test').Page} */
   let window;
   let dir;
 

@@ -46,7 +46,13 @@ const HL7_MESSAGES = {
   WHITESPACE: '   \r\n  ',
 };
 
-// Shortcut: create a locator by data-testid
+/**
+ * Shortcut: create a locator by data-testid.
+ * (The types are written out so that editors know this is a Playwright Locator, and so find toBeVisible() and the other checks.)
+ * @param {import('@playwright/test').Page} window
+ * @param {string} id
+ * @returns {import('@playwright/test').Locator}
+ */
 function tid(window, id) {
   return window.locator(`[data-testid="${id}"]`);
 }
@@ -172,15 +178,29 @@ function removeTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-/** Wait until a file exists and return its bytes. */
+/**
+ * Wait until a file exists and has been written completely: it is not empty and its size is
+ * the same at two checks in a row (a file is created before its bytes are written).
+ */
+async function waitUntilWritten(file, timeout) {
+  let previous = -1;
+  await expect.poll(() => {
+    const size = fs.existsSync(file) ? fs.statSync(file).size : -1;
+    const settled = size > 0 && size === previous;
+    previous = size;
+    return settled;
+  }, { timeout, intervals: [100], message: `The file ${file} was not written` }).toBe(true);
+}
+
+/** Wait until a file is written and return its bytes. */
 async function waitForFile(file, timeout = 10000) {
-  await expect.poll(() => fs.existsSync(file), { timeout, message: `The file ${file} was not written` }).toBe(true);
+  await waitUntilWritten(file, timeout);
   return fs.readFileSync(file);
 }
 
-/** Wait until a file exists and return its text (UTF-8). */
+/** Wait until a file is written and return its text (UTF-8). */
 async function waitForFileText(file, timeout = 10000) {
-  await expect.poll(() => fs.existsSync(file), { timeout, message: `The file ${file} was not written` }).toBe(true);
+  await waitUntilWritten(file, timeout);
   return fs.readFileSync(file, 'utf8');
 }
 

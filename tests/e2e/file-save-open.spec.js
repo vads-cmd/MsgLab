@@ -13,7 +13,9 @@ const SEGMENTS = HL7_MESSAGES.ADT_A01.split('\r');
 const asFile = (lines, eol) => Buffer.from(lines.map((line) => line + eol).join(''), 'utf8');
 
 test.describe('Saving and opening files', () => {
+  /** @type {import('@playwright/test').ElectronApplication} */
   let electronApp;
+  /** @type {import('@playwright/test').Page} */
   let window;
   let dir;
 

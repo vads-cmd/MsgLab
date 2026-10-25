@@ -9,7 +9,9 @@ const {
 // What the app remembers between runs: every test starts the app on its own data folder and starts it again on the same one.
 
 test.describe('Remembered settings', () => {
+  /** @type {import('@playwright/test').ElectronApplication} */
   let electronApp;
+  /** @type {import('@playwright/test').Page} */
   let window;
   let dataDir;
 
