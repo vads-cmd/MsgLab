@@ -67,3 +67,14 @@ test('rpm dependencies do not require libXScrnSaver, which some distributions la
   assert.ok(Array.isArray(build.rpm.depends) && build.rpm.depends.length > 0);
   assert.ok(!build.rpm.depends.some((name) => /xscrnsaver/i.test(name)));
 });
+
+test('linux icons are provided in the standard freedesktop sizes', () => {
+  assert.equal(build.linux.icon, 'assets/linux-icons');
+  for (const size of [16, 24, 32, 48, 64, 128, 256, 512]) {
+    const file = path.join(root, build.linux.icon, `${size}x${size}.png`);
+    assert.ok(fs.existsSync(file), `missing ${size}x${size}.png`);
+    const header = fs.readFileSync(file);
+    assert.equal(header.readUInt32BE(16), size);
+    assert.equal(header.readUInt32BE(20), size);
+  }
+});
