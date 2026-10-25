@@ -57,3 +57,8 @@ test('linux builds AppImage, deb and rpm and name a maintainer', () => {
   assert.deepEqual(build.linux.target, ['AppImage', 'deb', 'rpm']);
   assert.match(build.linux.maintainer, /^.+ <[^<>@\s]+@[^<>@\s]+>$/);
 });
+
+test('linux windows are linked to the desktop entry', () => {
+  assert.equal(pkg.desktopName, 'msglab.desktop');
+  assert.equal(build.linux.syncDesktopName, true);
+});

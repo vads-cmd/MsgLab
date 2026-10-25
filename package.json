@@ -1,8 +1,9 @@
 {
   "name": "msglab",
   "productName": "MsgLab",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Generate, validate, explain and (later) send HL7 v2 messages for testing",
+  "desktopName": "msglab.desktop",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -89,6 +90,7 @@
         "rpm"
       ],
       "category": "Development",
+      "syncDesktopName": true,
       "maintainer": "Vadym Shevchenko <vads.cmd@gmail.com>"
     }
   }
