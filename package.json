@@ -1,7 +1,7 @@
 {
   "name": "msglab",
   "productName": "MsgLab",
-  "version": "0.1.21",
+  "version": "0.1.24",
   "description": "Generate, validate, explain and (later) send HL7 v2 messages for testing",
   "main": "main.js",
   "scripts": {
@@ -12,7 +12,12 @@
     "test:all": "npm test && npm run test:e2e",
     "allure:generate": "allure generate allure-results --clean -o allure-report",
     "allure:serve": "allure serve allure-results",
-    "allure:open": "allure open allure-report"
+    "allure:open": "allure open allure-report",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
   },
   "license": "MIT",
   "author": "Vadym \"Ailur\" Shevchenko",
@@ -26,6 +31,62 @@
     "@playwright/test": "^1.64.1",
     "allure-commandline": "^2.46.1",
     "allure-playwright": "^3.14.0",
-    "electron": "^45.0.0"
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "afterSign": "scripts/adhoc-sign.js",
+    "appId": "io.github.vads-cmd.msglab",
+    "productName": "MsgLab",
+    "copyright": "Copyright © 2026 Vadym \"Ailur\" Shevchenko",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "renderer.js",
+      "styles.css",
+      "src/**/*",
+      "assets/**/*",
+      "LICENSE"
+    ],
+    "icon": "assets/app-icon.png",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "identity": "-",
+      "hardenedRuntime": false
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development"
+    }
   }
 }
