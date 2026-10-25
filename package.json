@@ -1,7 +1,7 @@
 {
   "name": "msglab",
   "productName": "MsgLab",
-  "version": "0.1.27",
+  "version": "0.1.28",
   "description": "Generate, validate, explain and (later) send HL7 v2 messages for testing",
   "desktopName": "msglab.desktop",
   "main": "main.js",
@@ -77,6 +77,17 @@
             "x64"
           ]
         }
+      ]
+    },
+    "rpm": {
+      "depends": [
+        "gtk3",
+        "libnotify",
+        "nss",
+        "(libXtst or libXtst6)",
+        "xdg-utils",
+        "at-spi2-core",
+        "(libuuid or libuuid1)"
       ]
     },
     "nsis": {

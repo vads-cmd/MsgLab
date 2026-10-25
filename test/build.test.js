@@ -62,3 +62,8 @@ test('linux windows are linked to the desktop entry', () => {
   assert.equal(pkg.desktopName, 'msglab.desktop');
   assert.equal(build.linux.syncDesktopName, true);
 });
+
+test('rpm dependencies do not require libXScrnSaver, which some distributions lack', () => {
+  assert.ok(Array.isArray(build.rpm.depends) && build.rpm.depends.length > 0);
+  assert.ok(!build.rpm.depends.some((name) => /xscrnsaver/i.test(name)));
+});
