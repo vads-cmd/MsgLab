@@ -42,6 +42,49 @@ function cleanFavorites(raw) {
   return result;
 }
 
+const MAX_PROFILES = 100;
+const MAX_PROFILE_NAME = 60;
+const PROFILE_ENCODINGS = new Set(['utf-8', 'windows-1252']);
+
+/** A whole number within limits, or the fallback. */
+function wholeNumber(value, min, max, fallback) {
+  const number = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  return Number.isInteger(number) && number >= min && number <= max ? number : fallback;
+}
+
+/** One saved connection: { name, host, port, connectTimeout, replyTimeout, encoding }, or null when it is not usable. */
+function cleanProfile(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const name = typeof raw.name === 'string' ? raw.name.trim() : '';
+  const host = typeof raw.host === 'string' ? raw.host.trim() : '';
+  const port = wholeNumber(raw.port, 1, 65535, null);
+  const plainName = name !== '' && name.length <= MAX_PROFILE_NAME && ![...name].some((char) => char.codePointAt(0) < 32);
+  if (!plainName || host === '' || host.length > 253 || !/^\[?[\w.:%-]+\]?$/.test(host) || port === null) return null;
+  return {
+    name,
+    host,
+    port,
+    connectTimeout: wholeNumber(raw.connectTimeout, 1, 600, 10),
+    replyTimeout: wholeNumber(raw.replyTimeout, 1, 600, 30),
+    encoding: PROFILE_ENCODINGS.has(raw.encoding) ? raw.encoding : 'utf-8',
+  };
+}
+
+/** The saved connections: usable ones only, names unique (ignoring case), at most 100. */
+function cleanProfiles(raw) {
+  if (!Array.isArray(raw)) return [];
+  const names = new Set();
+  const result = [];
+  for (const item of raw) {
+    const profile = cleanProfile(item);
+    if (!profile || names.has(profile.name.toLowerCase())) continue;
+    names.add(profile.name.toLowerCase());
+    result.push(profile);
+    if (result.length >= MAX_PROFILES) break;
+  }
+  return result;
+}
+
 /** The default folders: a short text for each kind, or null when not set. */
 function cleanFolders(raw) {
   const folders = { save: null, export: null };
@@ -53,11 +96,11 @@ function cleanFolders(raw) {
   return folders;
 }
 
-/** The whole settings object, cleaned: { controls, folder, folders, favorites }. */
+/** The whole settings object, cleaned: { controls, folder, folders, favorites, profiles }. */
 function cleanSettings(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
   const folder = typeof source.folder === 'string' && source.folder.length > 0 && source.folder.length < 1000 ? source.folder : null;
-  return { controls: cleanControls(source.controls), folder, folders: cleanFolders(source.folders), favorites: cleanFavorites(source.favorites) };
+  return { controls: cleanControls(source.controls), folder, folders: cleanFolders(source.folders), favorites: cleanFavorites(source.favorites), profiles: cleanProfiles(source.profiles) };
 }
 
 /** Reads the settings file; a missing or damaged file gives empty settings. */
@@ -76,4 +119,4 @@ async function saveSettings(file, settings) {
   await fs.rename(temp, file);
 }
 
-module.exports = { REMEMBERED_CONTROLS, THEMES, FOLDER_KINDS, cleanFavorites, cleanSettings, loadSettings, saveSettings };
+module.exports = { REMEMBERED_CONTROLS, THEMES, FOLDER_KINDS, MAX_PROFILES, cleanFavorites, cleanProfiles, cleanSettings, loadSettings, saveSettings };

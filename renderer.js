@@ -859,7 +859,7 @@ buildManual();
 // The main process says which controls are remembered; their values are applied once
 // everything else is set up, and saved shortly after each change.
 async function setUpSettings() {
-  const { ids, controls, folders, favorites: favoriteList } = await window.hl7.loadSettings();
+  const { ids, controls, folders, favorites: favoriteList, profiles: profileList } = await window.hl7.loadSettings();
   setFavorites(favoriteList ?? []);
   showFolder('save', folders.save);
   showFolder('export', folders.export);
@@ -872,6 +872,7 @@ async function setUpSettings() {
     else continue;
     control.dispatchEvent(new Event('change', { bubbles: true }));
   }
+  loadProfiles(profileList ?? []);
   let timer = null;
   const save = () => {
     const current = {};
@@ -1191,3 +1192,126 @@ document.getElementById('send-copy-ack').addEventListener('click', async () => {
 });
 input.addEventListener('input', updateSendSummary);
 updateSendSummary();
+
+/* ---- saved connections ---- */
+
+const profileSelect = document.getElementById('send-profile');
+const profileName = document.getElementById('send-profile-name');
+const profileSave = document.getElementById('send-profile-save');
+const profileDelete = document.getElementById('send-profile-delete');
+const profileStatus = document.getElementById('send-profile-status');
+const MAX_SAVED_CONNECTIONS = 100;
+let profiles = [];
+
+function currentConnection() {
+  return {
+    host: fieldValue('send-host').trim(),
+    port: Number(fieldValue('send-port')),
+    connectTimeout: Number(fieldValue('send-connect-timeout')),
+    replyTimeout: Number(fieldValue('send-reply-timeout')),
+    encoding: fieldValue('send-encoding'),
+  };
+}
+
+function sameConnection(profile, connection) {
+  return ['host', 'port', 'connectTimeout', 'replyTimeout', 'encoding'].every((key) => profile[key] === connection[key]);
+}
+
+const sameName = (a, b) => a.toLowerCase() === b.toLowerCase();
+
+/** The list always shows which saved connection the fields match, or "Not saved". With several equal ones the named one wins. */
+function syncProfileSelect() {
+  const connection = currentConnection();
+  const matches = profiles.filter((profile) => sameConnection(profile, connection));
+  const match = matches.find((profile) => sameName(profile.name, profileName.value.trim())) ?? matches[0];
+  profileSelect.value = match ? match.name : '';
+  profileDelete.disabled = !match;
+}
+
+function renderProfiles() {
+  const options = profiles.map((profile, index) => {
+    const option = tid(document.createElement('option'), `send-profile-option-${index + 1}`);
+    option.value = profile.name;
+    option.textContent = profile.name;
+    return option;
+  });
+  profileSelect.replaceChildren(profileSelect.options[0], ...options);
+  syncProfileSelect();
+}
+
+/** Called once the remembered settings are applied. */
+function loadProfiles(list) {
+  profiles = list;
+  renderProfiles();
+  if (profileSelect.value !== '' && profileName.value.trim() === '') profileName.value = profileSelect.value;
+}
+
+function setConnectionField(id, value, eventName) {
+  const control = document.getElementById(id);
+  control.value = String(value);
+  control.dispatchEvent(new Event(eventName, { bubbles: true }));
+}
+
+function applyProfile(profile) {
+  setConnectionField('send-host', profile.host, 'input');
+  setConnectionField('send-port', profile.port, 'input');
+  setConnectionField('send-connect-timeout', profile.connectTimeout, 'input');
+  setConnectionField('send-reply-timeout', profile.replyTimeout, 'input');
+  setConnectionField('send-encoding', profile.encoding, 'change');
+  profileName.value = profile.name;
+  syncProfileSelect();
+}
+
+const wholeSeconds = (value) => Number.isInteger(value) && value >= 1 && value <= 600;
+
+/** What is wrong with the connection that is about to be saved, or null. */
+function profileProblem(name, connection, isNew) {
+  if (name === '') return 'Enter a name for the connection.';
+  if (connection.host === '') return 'Enter the host first.';
+  if (!Number.isInteger(connection.port) || connection.port < 1 || connection.port > 65535) return 'The port must be a whole number from 1 to 65535.';
+  if (!wholeSeconds(connection.connectTimeout) || !wholeSeconds(connection.replyTimeout)) return 'The timeouts must be whole seconds from 1 to 600.';
+  if (isNew && profiles.length >= MAX_SAVED_CONNECTIONS) return `You can save up to ${MAX_SAVED_CONNECTIONS} connections.`;
+  return null;
+}
+
+async function saveProfile() {
+  const name = profileName.value.trim();
+  const connection = currentConnection();
+  const index = profiles.findIndex((profile) => sameName(profile.name, name));
+  const problem = profileProblem(name, connection, index === -1);
+  if (problem) {
+    showSendLine(profileStatus, problem, 'error');
+    return;
+  }
+  const next = [...profiles];
+  if (index === -1) next.push({ name, ...connection });
+  else next[index] = { name, ...connection };
+  const saved = await window.hl7.setProfiles(next);
+  if (!saved.some((profile) => sameName(profile.name, name))) {
+    showSendLine(profileStatus, 'The connection could not be saved. Check the host name and the name.', 'error');
+    return;
+  }
+  profiles = saved;
+  renderProfiles();
+  showSendLine(profileStatus, `${index === -1 ? 'Saved' : 'Updated'} "${name}".`, 'ok');
+}
+
+async function deleteProfile() {
+  const name = profileSelect.value;
+  if (name === '') return;
+  profiles = await window.hl7.setProfiles(profiles.filter((profile) => profile.name !== name));
+  renderProfiles();
+  showSendLine(profileStatus, `Deleted "${name}".`, 'ok');
+}
+
+profileSelect.addEventListener('change', () => {
+  const profile = profiles.find((item) => item.name === profileSelect.value);
+  if (!profile) return;
+  applyProfile(profile);
+  showSendLine(profileStatus, `Loaded "${profile.name}".`, 'ok');
+});
+for (const id of ['send-host', 'send-port', 'send-connect-timeout', 'send-reply-timeout']) document.getElementById(id).addEventListener('input', syncProfileSelect);
+document.getElementById('send-encoding').addEventListener('change', syncProfileSelect);
+profileName.addEventListener('input', syncProfileSelect);
+profileSave.addEventListener('click', () => saveProfile().catch(console.error));
+profileDelete.addEventListener('click', () => deleteProfile().catch(console.error));

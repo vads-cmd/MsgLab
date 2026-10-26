@@ -76,10 +76,11 @@ let lastFolder = null;
 let controlSettings = {};
 let defaultFolders = { save: null, export: null };
 let favoriteTypes = [];
+let connectionProfiles = [];
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 let writing = Promise.resolve();
 function persistSettings() {
-  const snapshot = { controls: controlSettings, folder: lastFolder, folders: defaultFolders, favorites: favoriteTypes };
+  const snapshot = { controls: controlSettings, folder: lastFolder, folders: defaultFolders, favorites: favoriteTypes, profiles: connectionProfiles };
   // one write after the other, so two quick saves cannot mix
   writing = writing.then(() => settingsStore.saveSettings(settingsFile(), snapshot)).catch((err) => console.error('Could not save settings:', err.message));
   return writing;
@@ -121,10 +122,14 @@ ipcMain.handle('app:setTheme', (_event, value) => {
   return nativeTheme.themeSource;
 });
 
-ipcMain.handle('settings:load', () => ({ ids: [...settingsStore.REMEMBERED_CONTROLS], controls: controlSettings, folders: defaultFolders, favorites: favoriteTypes }));
+ipcMain.handle('settings:load', () => ({ ids: [...settingsStore.REMEMBERED_CONTROLS], controls: controlSettings, folders: defaultFolders, favorites: favoriteTypes, profiles: connectionProfiles }));
 ipcMain.handle('settings:setFavorites', (_event, list) => {
   favoriteTypes = settingsStore.cleanFavorites(list);
   return persistSettings().then(() => favoriteTypes);
+});
+ipcMain.handle('settings:setProfiles', (_event, list) => {
+  connectionProfiles = settingsStore.cleanProfiles(list);
+  return persistSettings().then(() => connectionProfiles);
 });
 ipcMain.handle('settings:save', (_event, controls) => {
   controlSettings = settingsStore.cleanSettings({ controls }).controls;
@@ -382,6 +387,7 @@ app.whenReady().then(async () => {
   lastFolder = saved.folder;
   defaultFolders = saved.folders;
   favoriteTypes = saved.favorites;
+  connectionProfiles = saved.profiles;
   applyTheme(controlSettings['app-theme']);
   setUpMenu();
   createWindow();

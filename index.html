@@ -208,6 +208,19 @@
       <fieldset class="card-group" data-testid="send-card-server">
         <legend data-testid="send-card-server-title">Server</legend>
         <p class="view-hint" data-testid="send-server-hint">The message goes to this MLLP server over TCP: connect, send, wait for the ACK, disconnect.</p>
+        <div class="settings-row" data-testid="send-profile-row">
+          <label data-testid="send-profile-label">Saved connection
+            <select id="send-profile" data-testid="send-profile">
+              <option value="" selected>Not saved</option>
+            </select>
+          </label>
+          <label data-testid="send-profile-name-label">Name
+            <input type="text" id="send-profile-name" data-testid="send-profile-name" placeholder="for example Test server" maxlength="60" autocomplete="off">
+          </label>
+          <button type="button" id="send-profile-save" data-testid="send-profile-save">Save</button>
+          <button type="button" id="send-profile-delete" data-testid="send-profile-delete" class="quiet" disabled>Delete</button>
+        </div>
+        <output id="send-profile-status" data-testid="send-profile-status" class="gen-status" aria-live="polite"></output>
         <div class="settings-row" data-testid="send-server-row">
           <label data-testid="send-host-label">Host
             <input type="text" id="send-host" data-testid="send-host" placeholder="localhost or 10.0.0.5" maxlength="253" autocomplete="off" spellcheck="false">

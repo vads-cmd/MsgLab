@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('hl7', {
   newMessage: () => ipcRenderer.invoke('file:new'),
   onMenuCommand: (callback) => ipcRenderer.on('menu:command', (_event, command) => callback(command)),
   setFavorites: (list) => ipcRenderer.invoke('settings:setFavorites', list),
+  setProfiles: (list) => ipcRenderer.invoke('settings:setProfiles', list),
   chooseFolder: (kind) => ipcRenderer.invoke('settings:chooseFolder', kind),
   clearFolder: (kind) => ipcRenderer.invoke('settings:clearFolder', kind),
   setTheme: (value) => ipcRenderer.invoke('app:setTheme', value),
