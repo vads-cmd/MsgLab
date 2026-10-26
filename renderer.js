@@ -961,7 +961,10 @@ function showView(name) {
     if (active) item.setAttribute('aria-current', 'page');
     else item.removeAttribute('aria-current');
   }
-  if (name === 'send') updateSendSummary();
+  if (name === 'send') {
+    updateSendSummary();
+    updateBulkSummary();
+  }
 }
 
 for (const item of navItems) item.addEventListener('click', () => showView(item.dataset.view));
@@ -1047,6 +1050,9 @@ const sendStatus = document.getElementById('send-status');
 const sendTestStatus = document.getElementById('send-test-status');
 const sendSummary = document.getElementById('send-message-summary');
 const sendResult = document.getElementById('send-result');
+const bulkGo = document.getElementById('send-bulk-go');
+const bulkCancel = document.getElementById('send-bulk-cancel');
+let busyKind = 'single'; // what is running: 'single' or 'bulk'
 let sendBusy = false;
 let activeRequestId = null;
 let requestCounter = 0;
@@ -1067,7 +1073,9 @@ function refreshSendButtons() {
   const hasMessage = describeEditorMessage(input.value) !== null;
   sendGo.disabled = sendBusy || !hasMessage;
   sendTest.disabled = sendBusy;
-  sendCancel.hidden = !sendBusy;
+  sendCancel.hidden = !(sendBusy && busyKind === 'single');
+  bulkGo.disabled = sendBusy || bulkMessages.length === 0;
+  bulkCancel.hidden = !(sendBusy && busyKind === 'bulk');
 }
 
 function updateSendSummary() {
@@ -1133,7 +1141,8 @@ function connectionPayload() {
 }
 
 /** Runs one request with the buttons locked; the Cancel button stops the request that is running. */
-async function withSending(task) {
+async function withSending(task, kind = 'single') {
+  busyKind = kind;
   sendBusy = true;
   refreshSendButtons();
   try {
@@ -1315,3 +1324,218 @@ document.getElementById('send-encoding').addEventListener('change', syncProfileS
 profileName.addEventListener('input', syncProfileSelect);
 profileSave.addEventListener('click', () => saveProfile().catch(console.error));
 profileDelete.addEventListener('click', () => deleteProfile().catch(console.error));
+
+/* ---- bulk sending ---- */
+
+const sendBulkStatus = document.getElementById('send-bulk-status');
+const bulkProgress = document.getElementById('send-bulk-progress');
+const bulkResults = document.getElementById('send-bulk-results');
+const bulkRows = document.getElementById('send-bulk-rows');
+const confirmDialog = document.getElementById('send-confirm');
+const MAX_DELAY_SECONDS = 3600;
+let bulkBase = '';
+let bulkFailing = false;
+let bulkNextAt = null;
+let bulkTicker = null;
+
+const OUTCOME_LABELS = {
+  accepted: 'Accepted',
+  'application-error': 'Error',
+  rejected: 'Rejected',
+  'invalid-ack': 'Invalid reply',
+  'not-framed': 'Not MLLP',
+  'connect-failed': 'No connection',
+  'connect-timeout': 'No connection',
+  'reply-timeout': 'No ACK',
+  closed: 'Connection closed',
+  cancelled: 'Cancelled',
+  'invalid-input': 'Not sent',
+};
+
+/** The pause between messages in seconds, or null when the custom value is not usable. */
+function chosenDelay() {
+  const rate = fieldValue('send-rate');
+  if (rate !== 'custom') return Number(rate);
+  const text = fieldValue('send-delay-custom').trim();
+  const value = Number(text);
+  return text !== '' && Number.isFinite(value) && value >= 0 && value <= MAX_DELAY_SECONDS ? value : null;
+}
+
+function describeDuration(seconds) {
+  if (seconds < 1) return 'less than a second';
+  if (seconds < 90) return `${Math.round(seconds)} seconds`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 90) return `${minutes} minutes`;
+  const rest = minutes % 60;
+  return rest === 0 ? `${Math.floor(minutes / 60)} h` : `${Math.floor(minutes / 60)} h ${rest} min`;
+}
+
+function describePace(count, seconds) {
+  if (count < 2) return 'One message: there is no pause.';
+  if (seconds === 0) return 'No pause: the next message goes out as soon as the ACK arrives.';
+  return `One message every ${seconds} seconds: about ${describeDuration((count - 1) * seconds)} in all, the first goes out at once.`;
+}
+
+function updateBulkSummary() {
+  const count = bulkMessages.length;
+  document.getElementById('send-bulk-summary').textContent = count === 0
+    ? 'There are no messages yet. Generate them in the Bulk tab first.'
+    : `${plural(count, 'message')} from the Bulk tab ${count === 1 ? 'is' : 'are'} ready to send.`;
+  const seconds = chosenDelay();
+  document.getElementById('send-bulk-estimate').textContent = count === 0 || seconds === null ? '' : describePace(count, seconds);
+  document.getElementById('send-delay-custom-label').hidden = fieldValue('send-rate') !== 'custom';
+  refreshSendButtons();
+}
+
+const clock = (milliseconds) => {
+  const total = Math.max(0, Math.ceil(milliseconds / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+};
+
+function renderBulkStatus() {
+  const next = bulkNextAt === null ? '' : ` Next message in ${clock(bulkNextAt - Date.now())}.`;
+  showSendLine(sendBulkStatus, bulkBase + next, bulkFailing ? 'error' : null);
+}
+
+function stopTicker() {
+  clearInterval(bulkTicker);
+  bulkTicker = null;
+  bulkNextAt = null;
+}
+
+function appendBulkRow(record) {
+  const row = tid(document.createElement('tr'), `send-row-${record.number}`);
+  const label = OUTCOME_LABELS[record.outcome] ?? record.outcome;
+  const cells = [
+    ['number', record.number],
+    ['type', record.type],
+    ['control-id', record.controlId],
+    ['result', record.ackCode ? `${label} (${record.ackCode})` : label],
+    ['time', record.ms],
+    ['details', record.reconnected ? `Connected again. ${record.message}` : record.message],
+  ];
+  for (const [name, value] of cells) row.append(tid(el('td', '', String(value)), `send-row-${record.number}-${name}`));
+  row.classList.toggle('failed', !record.ok);
+  bulkRows.append(row);
+  bulkResults.hidden = false;
+  bulkResults.scrollTop = bulkResults.scrollHeight;
+}
+
+function onSendProgress(progress) {
+  if (progress.requestId !== activeRequestId) return;
+  if (progress.kind === 'sent') {
+    stopTicker();
+    appendBulkRow(progress.record);
+    bulkProgress.value = progress.done;
+    bulkFailing = progress.failed > 0;
+    bulkBase = `Sent ${progress.done} of ${progress.total}: ${progress.accepted} accepted, ${progress.failed} not accepted.`;
+    renderBulkStatus();
+  } else if (progress.kind === 'waiting') {
+    bulkNextAt = progress.nextAt;
+    renderBulkStatus();
+    bulkTicker = setInterval(renderBulkStatus, 1000);
+  }
+}
+window.hl7.onSendProgress(onSendProgress);
+
+function describeBulkEnd(summary) {
+  const last = summary.results.at(-1);
+  const counts = `${summary.accepted} accepted, ${summary.failed} not accepted`;
+  const again = summary.reconnects > 0 ? ` The connection was opened again ${plural(summary.reconnects, 'time')}.` : '';
+  switch (summary.status) {
+    case 'finished':
+      return { text: `Done: ${plural(summary.total, 'message')} sent, ${counts}.${again}`, failing: summary.failed > 0 };
+    case 'stopped':
+      return { text: `Stopped after message ${last.number} of ${summary.total} (${counts}): ${last.message}`, failing: true };
+    case 'cancelled':
+      return { text: `Cancelled after ${summary.attempted} of ${summary.total} messages (${counts}).`, failing: summary.failed > 0 };
+    case 'connection-failed':
+      return { text: `Stopped after ${summary.attempted} of ${summary.total} messages (${counts}): ${last.message}`, failing: true };
+    default:
+      return { text: summary.message ?? 'The messages could not be sent.', failing: true };
+  }
+}
+
+function showBulkEnd(summary) {
+  stopTicker();
+  lastBulkResults = summary.results;
+  bulkExport.hidden = summary.results.length === 0;
+  for (const record of summary.results) {
+    if (!document.querySelector(`[data-testid="send-row-${record.number}"]`)) appendBulkRow(record);
+  }
+  const end = describeBulkEnd(summary);
+  bulkFailing = end.failing;
+  bulkBase = end.text;
+  bulkProgress.value = summary.attempted;
+  bulkProgress.hidden = summary.attempted === 0;
+  renderBulkStatus();
+  showSendLine(sendBulkStatus, end.text, end.failing ? 'error' : 'ok');
+}
+
+/** Asks before anything is sent: how many, where to, how long. Resolves true when the user agrees. */
+function confirmBulk(count, target, seconds, stopOnError) {
+  document.getElementById('send-confirm-title').textContent = `Send ${plural(count, 'message')}?`;
+  const lines = [`To ${target}`, describePace(count, seconds)];
+  lines.push(stopOnError ? 'The run stops at the first message that is not accepted.' : 'The run goes on when a message is not accepted.');
+  document.getElementById('send-confirm-text').textContent = lines.join('\n');
+  return new Promise((resolve) => {
+    confirmDialog.addEventListener('close', () => resolve(confirmDialog.returnValue === 'send'), { once: true });
+    confirmDialog.returnValue = '';
+    confirmDialog.showModal();
+  });
+}
+
+async function runBulk(messages, seconds, stopOnError) {
+  clearSendResult();
+  showSendLine(sendStatus, '', null);
+  showSendLine(sendTestStatus, '', null);
+  bulkRows.replaceChildren();
+  bulkResults.hidden = true;
+  lastBulkResults = [];
+  bulkExport.hidden = true;
+  showSendLine(bulkExportStatus, '', null);
+  bulkProgress.max = messages.length;
+  bulkProgress.value = 0;
+  bulkProgress.hidden = false;
+  bulkFailing = false;
+  await withSending(async () => {
+    const payload = { ...connectionPayload(), messages, delaySeconds: seconds, stopOnError };
+    bulkBase = `Connecting to ${payload.host.trim()}:${payload.port}...`;
+    renderBulkStatus();
+    showBulkEnd(await window.hl7.sendBatch(payload));
+  }, 'bulk');
+}
+
+async function bulkClicked() {
+  const seconds = chosenDelay();
+  const host = fieldValue('send-host').trim();
+  const problem = bulkMessages.length === 0 ? 'There are no messages to send.'
+    : seconds === null ? `Enter the seconds between messages, from 0 to ${MAX_DELAY_SECONDS}.`
+      : host === '' ? 'Enter the host first.' : null;
+  if (problem) {
+    showSendLine(sendBulkStatus, problem, 'error');
+    return;
+  }
+  const stopOnError = document.getElementById('send-stop-on-error').checked;
+  if (!(await confirmBulk(bulkMessages.length, `${host}:${fieldValue('send-port')}`, seconds, stopOnError))) return;
+  await runBulk(bulkMessages.map((message) => message.text), seconds, stopOnError);
+}
+
+const bulkExport = document.getElementById('send-bulk-export');
+const bulkExportStatus = document.getElementById('send-bulk-export-status');
+let lastBulkResults = [];
+
+async function exportBulkReport() {
+  const result = await window.hl7.saveReport(lastBulkResults);
+  if (result.canceled) return;
+  showSendLine(bulkExportStatus, result.ok ? `Saved ${plural(result.rows, 'row')} to ${result.fileName}.` : result.error, result.ok ? 'ok' : 'error');
+}
+bulkExport.addEventListener('click', () => exportBulkReport().catch(console.error));
+
+bulkGo.addEventListener('click', () => bulkClicked().catch(console.error));
+bulkCancel.addEventListener('click', () => {
+  if (activeRequestId) window.hl7.cancelSend(activeRequestId).catch(console.error);
+});
+document.getElementById('send-rate').addEventListener('change', updateBulkSummary);
+document.getElementById('send-delay-custom').addEventListener('input', updateBulkSummary);
+updateBulkSummary();

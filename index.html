@@ -271,6 +271,43 @@
           </details>
         </div>
       </fieldset>
+      <fieldset class="card-group" data-testid="send-card-bulk">
+        <legend data-testid="send-card-bulk-title">Bulk send</legend>
+        <p class="view-hint" data-testid="send-bulk-hint">Sends the messages generated in the Bulk tab over one connection, one after the other, and waits for each ACK.</p>
+        <output id="send-bulk-summary" data-testid="send-bulk-summary" class="send-summary"></output>
+        <div class="settings-row" data-testid="send-bulk-options">
+          <label data-testid="send-rate-label">Pace
+            <select id="send-rate" data-testid="send-rate">
+              <option value="60" selected>1 message per minute</option>
+              <option value="30">1 message every 30 seconds</option>
+              <option value="10">1 message every 10 seconds</option>
+              <option value="5">1 message every 5 seconds</option>
+              <option value="1">1 message per second</option>
+              <option value="0">No pause (as fast as the ACKs arrive)</option>
+              <option value="custom">Custom...</option>
+            </select>
+          </label>
+          <label id="send-delay-custom-label" data-testid="send-delay-custom-label" hidden>Seconds between messages
+            <input type="number" id="send-delay-custom" data-testid="send-delay-custom" value="60" min="0" max="3600" step="1">
+          </label>
+          <label class="file-check" data-testid="send-stop-on-error-label"><input type="checkbox" id="send-stop-on-error" data-testid="send-stop-on-error"> Stop if a message is not accepted</label>
+        </div>
+        <output id="send-bulk-estimate" data-testid="send-bulk-estimate" class="send-summary"></output>
+        <div class="send-actions" data-testid="send-bulk-actions">
+          <button type="button" id="send-bulk-go" data-testid="send-bulk-go" class="primary">Send all...</button>
+          <button type="button" id="send-bulk-cancel" data-testid="send-bulk-cancel" hidden>Cancel</button>
+          <button type="button" id="send-bulk-export" data-testid="send-bulk-export" hidden>Save report (CSV)...</button>
+        </div>
+        <progress id="send-bulk-progress" data-testid="send-bulk-progress" class="send-progress" value="0" max="1" hidden></progress>
+        <output id="send-bulk-status" data-testid="send-bulk-status" class="gen-status" aria-live="polite"></output>
+        <output id="send-bulk-export-status" data-testid="send-bulk-export-status" class="gen-status" aria-live="polite"></output>
+        <div id="send-bulk-results" data-testid="send-bulk-results" class="bulk-table-wrap" hidden>
+          <table class="bulk-table" data-testid="send-bulk-table">
+            <thead data-testid="send-bulk-table-head"><tr><th data-testid="send-col-number">#</th><th data-testid="send-col-type">Type</th><th data-testid="send-col-control-id">Control ID</th><th data-testid="send-col-result">Result</th><th data-testid="send-col-time">Time (ms)</th><th data-testid="send-col-details">Details</th></tr></thead>
+            <tbody id="send-bulk-rows" data-testid="send-bulk-rows"></tbody>
+          </table>
+        </div>
+      </fieldset>
     </section>
 
     <section class="view" id="view-settings" data-testid="view-settings" hidden>
@@ -329,6 +366,15 @@
     </section>
   </main>
 </div>
+
+<dialog id="send-confirm" data-testid="send-confirm" class="confirm" aria-labelledby="send-confirm-title">
+  <h2 id="send-confirm-title" data-testid="send-confirm-title" class="confirm-title">Send the messages?</h2>
+  <p id="send-confirm-text" data-testid="send-confirm-text" class="confirm-text"></p>
+  <form method="dialog" class="confirm-actions" data-testid="send-confirm-actions">
+    <button value="cancel" id="send-confirm-no" data-testid="send-confirm-no" autofocus>Cancel</button>
+    <button value="send" id="send-confirm-yes" data-testid="send-confirm-yes" class="primary">Send</button>
+  </form>
+</dialog>
 
 <dialog id="about" data-testid="about" class="about" aria-labelledby="about-name">
   <img class="about-logo" data-testid="about-logo" src="assets/app-icon.png" alt="">

@@ -10,6 +10,7 @@ const REMEMBERED_CONTROLS = new Set([
   'bulk-count', 'bulk-minutes', 'bulk-mode',
   'export-mode', 'export-batch', 'file-eol', 'file-encoding', 'file-mllp', 'app-theme',
   'send-host', 'send-port', 'send-connect-timeout', 'send-reply-timeout', 'send-encoding',
+  'send-rate', 'send-delay-custom', 'send-stop-on-error',
 ]);
 
 // The colour themes the app can show; 'system' follows the operating system
@@ -59,7 +60,7 @@ function cleanProfile(raw) {
   const host = typeof raw.host === 'string' ? raw.host.trim() : '';
   const port = wholeNumber(raw.port, 1, 65535, null);
   const plainName = name !== '' && name.length <= MAX_PROFILE_NAME && ![...name].some((char) => char.codePointAt(0) < 32);
-  if (!plainName || host === '' || host.length > 253 || !/^\[?[\w.:%-]+\]?$/.test(host) || port === null) return null;
+  if (!plainName || host === '' || host.length > 253 || !/^\[?[\w.:%-]+]?$/.test(host) || port === null) return null;
   return {
     name,
     host,

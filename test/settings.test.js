@@ -19,7 +19,7 @@ test('cleanSettings copes with nonsense', () => {
 });
 
 test('the server settings are remembered, the test message box is not', () => {
-  for (const id of ['send-host', 'send-port', 'send-connect-timeout', 'send-reply-timeout', 'send-encoding']) assert.ok(REMEMBERED_CONTROLS.has(id), id);
+  for (const id of ['send-host', 'send-port', 'send-connect-timeout', 'send-reply-timeout', 'send-encoding', 'send-rate', 'send-delay-custom', 'send-stop-on-error']) assert.ok(REMEMBERED_CONTROLS.has(id), id);
   assert.ok(!REMEMBERED_CONTROLS.has('send-test-message'), 'the test message box starts off every time');
 });
 

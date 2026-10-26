@@ -12,7 +12,8 @@
  *   accept       ACK AA (default)         error      ACK AE            reject     ACK AR
  *   enhanced     ACK CA                   silent     never answers     close      closes without answering
  *   unframed     answers without framing  garbage    framed, no MSA    split      ACK AA, one byte at a time
- *   mismatch     ACK AA for another message ID
+ *   mismatch     ACK AA for another message ID    closeAfterReply  ACK AA, then closes the connection
+ * mode can also be a function: mode(n) gives the mode for the n-th message received (1, 2, 3 ...).
  * delayMs waits before answering. text sets the MSA-3 text.
  */
 
@@ -21,7 +22,7 @@ const { FrameReader } = require('../../src/mllp');
 const { parseMessage, get } = require('../../src/hl7/parser');
 const { decodeBuffer } = require('../../src/files');
 
-const ACK_CODE_FOR_MODE = { accept: 'AA', error: 'AE', reject: 'AR', enhanced: 'CA', split: 'AA', mismatch: 'AA' };
+const ACK_CODE_FOR_MODE = { accept: 'AA', error: 'AE', reject: 'AR', enhanced: 'CA', split: 'AA', mismatch: 'AA', closeAfterReply: 'AA' };
 
 function buildAck(messageText, code, text = '', controlId = null) {
   const msg = parseMessage(messageText);
@@ -57,7 +58,8 @@ function handleConnection(socket, { mode, delayMs, text }, received) {
     for (const payload of reader.push(chunk)) {
       const messageText = decodeBuffer(payload).text;
       received.push({ text: messageText, bytes: Buffer.from(payload) });
-      if (mode !== 'silent') setTimeout(() => answer(socket, mode, messageText, text), delayMs);
+      const current = typeof mode === 'function' ? mode(received.length) : mode;
+      if (current !== 'silent') setTimeout(() => answer(socket, current, messageText, text), delayMs);
     }
   });
 }
@@ -65,6 +67,7 @@ function handleConnection(socket, { mode, delayMs, text }, received) {
 function answer(socket, mode, messageText, text) {
   if (mode === 'close') socket.end();
   else if (mode === 'split') writeSlowly(socket, replyFor(mode, messageText, text));
+  else if (mode === 'closeAfterReply') socket.end(replyFor(mode, messageText, text));
   else socket.write(replyFor(mode, messageText, text));
 }
 

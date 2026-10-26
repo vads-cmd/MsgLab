@@ -1015,3 +1015,21 @@ button.star.on:hover:not(:disabled) {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.send-progress { width: 100%; margin-top: var(--s3); }
+.send-progress[hidden], #send-bulk-results[hidden], #send-delay-custom-label[hidden] { display: none; }
+#send-bulk-results { margin-top: var(--s3); }
+#send-delay-custom { width: 8em; }
+.confirm {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  padding: var(--s5);
+  border: 1px solid var(--outline);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--fg);
+}
+.confirm::backdrop { background: rgba(0, 0, 0, 0.45); }
+.confirm-title { margin: 0 0 var(--s3); font-size: 18px; }
+.confirm-text { margin: 0 0 var(--s4); white-space: pre-line; overflow-wrap: anywhere; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: var(--s3); margin: 0; }

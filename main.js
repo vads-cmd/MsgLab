@@ -9,6 +9,8 @@ const { generate } = require('./src/hl7/generator');
 const { generateBulk } = require('./src/hl7/bulk');
 const files = require('./src/files');
 const mllp = require('./src/mllp');
+const { sendBatch, cleanBatchRequest } = require('./src/send-batch');
+const { buildReportCsv, reportFileName, MAX_RECORDS } = require('./src/send-report');
 const settingsStore = require('./src/settings');
 const { buildMenuTemplate } = require('./src/menu');
 const { ABOUT } = require('./src/about');
@@ -113,6 +115,32 @@ async function runSend(payload, { needsMessage, action }) {
 
 ipcMain.handle('mllp:send', (_event, payload) => runSend(payload, { needsMessage: true, action: mllp.sendMessage }));
 ipcMain.handle('mllp:test', (_event, payload) => runSend(payload, { needsMessage: false, action: mllp.testConnection }));
+// Bulk sending: one run at a time. Progress goes to the window that asked, after each message and before each pause.
+let batchRunning = false;
+
+const batchRefused = (message) => ({ status: 'invalid-settings', message, total: 0, attempted: 0, accepted: 0, failed: 0, reconnects: 0, results: [] });
+
+ipcMain.handle('mllp:sendBatch', async (event, payload) => {
+  const request = cleanBatchRequest(payload);
+  if (request.error) return batchRefused(request.error);
+  if (batchRunning) return batchRefused('A bulk send is already running.');
+  batchRunning = true;
+  const controller = new AbortController();
+  runningSends.set(request.requestId, controller);
+  const stopWithWindow = () => controller.abort();
+  event.sender.once('destroyed', stopWithWindow);
+  const onProgress = (progress) => {
+    if (!event.sender.isDestroyed()) event.sender.send('send:progress', { requestId: request.requestId, ...progress });
+  };
+  try {
+    return await sendBatch({ ...request.options, signal: controller.signal, onProgress });
+  } finally {
+    batchRunning = false;
+    runningSends.delete(request.requestId);
+    if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', stopWithWindow);
+  }
+});
+
 ipcMain.handle('mllp:cancel', (_event, requestId) => {
   runningSends.get(asText(requestId))?.abort();
 });
@@ -200,6 +228,25 @@ ipcMain.handle('file:save', async (event, payload) => {
     savedPaths.set(event.sender.id, target);
     rememberFolder(path.dirname(target));
     return { ok: true, fileName: path.basename(target), bytes: data.length, warning };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// The results of a bulk send as a CSV file. The page sends the result records, the place comes from the dialog.
+ipcMain.handle('report:save', async (event, records) => {
+  if (!Array.isArray(records) || records.length === 0 || records.length > MAX_RECORDS) return { ok: false, error: 'There are no results to save.' };
+  try {
+    const chosen = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: 'Save the send report',
+      defaultPath: path.join(await startFolder('export'), reportFileName()),
+      filters: [{ name: 'CSV files', extensions: ['csv'] }, { name: 'All files', extensions: ['*'] }],
+    });
+    if (chosen.canceled || !chosen.filePath) return { ok: false, canceled: true };
+    // the byte order mark lets Excel read the text as UTF-8
+    await files.writeFile(chosen.filePath, Buffer.from('\uFEFF' + buildReportCsv(records), 'utf8'));
+    rememberFolder(path.dirname(chosen.filePath));
+    return { ok: true, fileName: path.basename(chosen.filePath), rows: records.length };
   } catch (err) {
     return { ok: false, error: err.message };
   }

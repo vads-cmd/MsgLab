@@ -191,11 +191,208 @@ function checkInput(options) {
 
 const positive = (value, fallback) => (Number.isFinite(value) && value > 0 ? value : fallback);
 
+/** Opens a TCP connection. Resolves { socket } or { error: { outcome, message, code? } }. */
+function openConnection({ host, port, connectTimeoutMs, signal }) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    let done = false;
+    let timer = null;
+    const onAbort = () => finish({ outcome: 'cancelled', message: 'Sending was cancelled.' });
+    function finish(error) {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      if (error) socket.destroy();
+      resolve(error ? { error } : { socket });
+    }
+    timer = setTimeout(() => {
+      finish({ outcome: 'connect-timeout', message: `No connection to ${host}:${port} within ${Math.round(connectTimeoutMs / 1000)} seconds.` });
+    }, connectTimeoutMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    socket.setNoDelay(true);
+    socket.once('connect', () => finish(null));
+    socket.once('error', (error) => finish({ outcome: 'connect-failed', message: networkMessage(error, host, port, false), code: error.code }));
+    socket.connect(port, host);
+  });
+}
+
+const NOT_FRAMED = 'The server answered, but not in MLLP framing (the reply does not start with the <VT> byte).';
+
+/**
+ * A connection to one MLLP server that can carry many messages, one after the other. The
+ * connection is opened when the first message is sent and kept open. When the server has
+ * closed it in the meantime it is opened again, and the result says so (reconnected: true).
+ * After a timeout, a cancel or a broken reply the connection is closed, so that a late ACK
+ * can never be taken for the ACK of the next message.
+ *
+ * options: host, port, encoding, connectTimeoutMs, replyTimeoutMs
+ */
+class MllpSession {
+  constructor(options = {}) {
+    this.options = options;
+    this.socket = null;
+    this.reader = null;
+    this.exchange = null;
+    this.hadConnection = false;
+    this.idleNoise = false;
+    this.reconnects = 0;
+  }
+
+  get connected() {
+    return this.socket !== null && !this.socket.destroyed;
+  }
+
+  /** Closes the connection; the session can still be used, it connects again. */
+  close() {
+    const socket = this.socket;
+    this.socket = null;
+    this.reader = null;
+    if (socket) {
+      socket.removeAllListeners();
+      socket.on('error', () => {});
+      socket.destroy();
+    }
+  }
+
+  attach(socket) {
+    this.socket = socket;
+    this.reader = new FrameReader();
+    socket.on('data', (chunk) => this.onData(socket, chunk));
+    socket.on('error', (error) => this.onGone(socket, error));
+    socket.on('close', () => this.onGone(socket, null));
+  }
+
+  onData(socket, chunk) {
+    if (socket !== this.socket) return;
+    if (this.exchange) {
+      this.exchange.onData(chunk);
+      return;
+    }
+    this.idleNoise = true; // bytes nobody asked for: do not trust this connection for the next message
+  }
+
+  onGone(socket, error) {
+    if (socket !== this.socket) return;
+    this.socket = null;
+    socket.destroy();
+    this.exchange?.onGone(error);
+  }
+
+  /**
+   * Sends one message and waits for its ACK. Always resolves; the result has the shape documented at sendMessage.
+   * options: signal (AbortSignal)
+   */
+  async send(message, { signal } = {}) {
+    const input = checkInput({ ...this.options, message });
+    if (input.error) return { ok: false, outcome: 'invalid-input', message: input.error, warnings: [] };
+    const started = performance.now();
+    if (signal?.aborted) return this.noExchange(input, started, { outcome: 'cancelled', message: 'Sending was cancelled.' });
+    if (this.idleNoise) {
+      this.close();
+      this.idleNoise = false;
+    }
+    let connectMs = null;
+    const reconnected = !this.connected && this.hadConnection;
+    if (!this.connected) {
+      const opened = await openConnection({ host: input.host, port: input.port, signal, connectTimeoutMs: positive(this.options.connectTimeoutMs, DEFAULT_CONNECT_TIMEOUT_MS) });
+      if (opened.error) return this.noExchange(input, started, opened.error);
+      this.attach(opened.socket);
+      connectMs = milliseconds(started);
+      this.hadConnection = true;
+      if (reconnected) this.reconnects += 1;
+    }
+    return this.runExchange(input, { signal, started, connectMs, reconnected });
+  }
+
+  noExchange(input, started, error) {
+    return {
+      ok: false, outcome: error.outcome, message: error.message, host: input.host, port: input.port, bytesSent: input.frame.length,
+      connectMs: null, totalMs: milliseconds(started), reply: describeReply(Buffer.alloc(0)), warnings: [], reconnected: false,
+      ...(error.code ? { code: error.code } : {}),
+    };
+  }
+
+  runExchange(input, { signal, started, connectMs, reconnected }) {
+    const { frame, sentControlId, host, port } = input;
+    const replyTimeoutMs = positive(this.options.replyTimeoutMs, DEFAULT_REPLY_TIMEOUT_MS);
+    const socket = this.socket;
+    const reader = this.reader;
+    const strayBefore = reader.strayBytes;
+    const received = [];
+    let loggedBytes = 0;
+    let receivedBytes = 0;
+    let settled = false;
+    let timer = null;
+
+    const withoutFraming = () => receivedBytes > 0 && reader.strayBytes - strayBefore === receivedBytes;
+
+    return new Promise((resolve) => {
+      const onAbort = () => finish('cancelled', 'Sending was cancelled.');
+      const finish = (outcome, message, extra = {}, keepConnection = false) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
+        this.exchange = null;
+        if (!keepConnection) this.close();
+        resolve({
+          ok: outcome === 'accepted', outcome, message, host, port, bytesSent: frame.length, connectMs, reconnected,
+          totalMs: milliseconds(started), reply: describeReply(Buffer.concat(received).subarray(0, MAX_LOG_BYTES)), warnings: [], ...extra,
+        });
+      };
+
+      const onFrame = (payload) => {
+        const { text } = decodeBuffer(payload);
+        const ack = parseAck(text);
+        const warnings = [];
+        if (sentControlId && ack.controlId && ack.controlId !== sentControlId) {
+          warnings.push(`The ACK answers message ${ack.controlId}, but the message sent has control ID ${sentControlId}.`);
+        }
+        finish(OUTCOME_FOR_LEVEL[ack.level], describeAck(ack, milliseconds(started)), { ack, ackText: text, warnings }, ack.level !== 'unknown');
+      };
+
+      this.exchange = {
+        onData: (chunk) => {
+          receivedBytes += chunk.length;
+          if (loggedBytes < MAX_LOG_BYTES) {
+            received.push(chunk);
+            loggedBytes += chunk.length;
+          }
+          let frames;
+          try {
+            frames = reader.push(chunk);
+          } catch (error) {
+            finish('invalid-ack', error.message);
+            return;
+          }
+          if (frames.length > 0) onFrame(frames[0]);
+        },
+        onGone: (error) => {
+          if (error) finish('closed', networkMessage(error, host, port, true), { code: error.code });
+          else if (withoutFraming()) finish('not-framed', NOT_FRAMED);
+          else if (receivedBytes > 0) finish('closed', 'The server closed the connection in the middle of its reply.');
+          else finish('closed', 'The server closed the connection without sending an ACK.');
+        },
+      };
+
+      signal?.addEventListener('abort', onAbort, { once: true });
+      socket.write(frame, () => {
+        if (settled) return;
+        timer = setTimeout(() => {
+          if (withoutFraming()) finish('not-framed', NOT_FRAMED);
+          else finish('reply-timeout', `Connected and sent ${frame.length} bytes, but no ACK arrived within ${Math.round(replyTimeoutMs / 1000)} seconds.`);
+        }, replyTimeoutMs);
+      });
+    });
+  }
+}
+
 /**
  * Open a connection, send one message, wait for the ACK, close. Always resolves; never throws for
  * network problems. The result says what happened:
  *
- *   { ok, outcome, message, host, port, bytesSent, connectMs, totalMs, reply, ack?, ackText?, warnings, code? }
+ *   { ok, outcome, message, host, port, bytesSent, connectMs, totalMs, reply, ack?, ackText?, warnings, reconnected, code? }
  *
  *   outcome: accepted | application-error | rejected | invalid-ack | not-framed | connect-failed |
  *            connect-timeout | reply-timeout | closed | cancelled | invalid-input
@@ -203,123 +400,13 @@ const positive = (value, fallback) => (Number.isFinite(value) && value > 0 ? val
  * options: host, port, message, encoding ('utf-8' | 'windows-1252'), connectTimeoutMs,
  *          replyTimeoutMs, signal (AbortSignal)
  */
-function sendMessage(options = {}) {
-  const input = checkInput(options);
-  if (input.error) {
-    return Promise.resolve({ ok: false, outcome: 'invalid-input', message: input.error, warnings: [] });
+async function sendMessage(options = {}) {
+  const session = new MllpSession(options);
+  try {
+    return await session.send(options.message, { signal: options.signal });
+  } finally {
+    session.close();
   }
-  const { host, port, frame, sentControlId } = input;
-  const connectTimeoutMs = positive(options.connectTimeoutMs, DEFAULT_CONNECT_TIMEOUT_MS);
-  const replyTimeoutMs = positive(options.replyTimeoutMs, DEFAULT_REPLY_TIMEOUT_MS);
-
-  return new Promise((resolve) => {
-    const started = performance.now();
-    const reader = new FrameReader();
-    const received = [];
-    let receivedBytes = 0;
-    let connectMs = null;
-    let settled = false;
-    let connectTimer = null;
-    let replyTimer = null;
-    const socket = new net.Socket();
-
-    const onAbort = () => finish('cancelled', 'Sending was cancelled.');
-
-    function finish(outcome, message, extra = {}) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(connectTimer);
-      clearTimeout(replyTimer);
-      options.signal?.removeEventListener('abort', onAbort);
-      socket.destroy();
-      const raw = Buffer.concat(received).subarray(0, MAX_LOG_BYTES);
-      resolve({
-        ok: outcome === 'accepted',
-        outcome,
-        message,
-        host,
-        port,
-        bytesSent: frame.length,
-        connectMs,
-        totalMs: milliseconds(started),
-        reply: describeReply(raw),
-        warnings: [],
-        ...extra,
-      });
-    }
-
-    function onFrame(payload) {
-      const { text } = decodeBuffer(payload);
-      const ack = parseAck(text);
-      const warnings = [];
-      if (sentControlId && ack.controlId && ack.controlId !== sentControlId) {
-        warnings.push(`The ACK answers message ${ack.controlId}, but the message sent has control ID ${sentControlId}.`);
-      }
-      finish(OUTCOME_FOR_LEVEL[ack.level], describeAck(ack, milliseconds(started)), { ack, ackText: text, warnings });
-    }
-
-    const answeredWithoutFraming = () => receivedBytes > 0 && receivedBytes === reader.strayBytes;
-    const NOT_FRAMED = 'The server answered, but not in MLLP framing (the reply does not start with the <VT> byte).';
-
-    function onClosed() {
-      if (settled) return;
-      if (answeredWithoutFraming()) {
-        finish('not-framed', NOT_FRAMED);
-      } else if (receivedBytes > 0) {
-        finish('closed', 'The server closed the connection in the middle of its reply.');
-      } else {
-        finish('closed', 'The server closed the connection without sending an ACK.');
-      }
-    }
-
-    if (options.signal?.aborted) {
-      finish('cancelled', 'Sending was cancelled.');
-      return;
-    }
-    options.signal?.addEventListener('abort', onAbort, { once: true });
-
-    socket.setNoDelay(true);
-    connectTimer = setTimeout(() => {
-      finish('connect-timeout', `No connection to ${host}:${port} within ${Math.round(connectTimeoutMs / 1000)} seconds.`);
-    }, connectTimeoutMs);
-
-    socket.once('connect', () => {
-      clearTimeout(connectTimer);
-      connectMs = milliseconds(started);
-      socket.write(frame, () => {
-        if (settled) return;
-        replyTimer = setTimeout(() => {
-          if (answeredWithoutFraming()) {
-            finish('not-framed', NOT_FRAMED);
-            return;
-          }
-          finish('reply-timeout', `Connected and sent ${frame.length} bytes, but no ACK arrived within ${Math.round(replyTimeoutMs / 1000)} seconds.`);
-        }, replyTimeoutMs);
-      });
-    });
-
-    socket.on('data', (chunk) => {
-      if (settled) return;
-      receivedBytes += chunk.length;
-      if (received.length === 0 || Buffer.concat(received).length < MAX_LOG_BYTES) received.push(chunk);
-      let frames;
-      try {
-        frames = reader.push(chunk);
-      } catch (error) {
-        finish('invalid-ack', error.message);
-        return;
-      }
-      if (frames.length > 0) onFrame(frames[0]);
-    });
-
-    socket.on('error', (error) => {
-      const connected = connectMs !== null;
-      finish(connected ? 'closed' : 'connect-failed', networkMessage(error, host, port, connected), { code: error.code });
-    });
-    socket.on('close', onClosed);
-
-    socket.connect(port, host);
-  });
 }
 
 /**
@@ -402,6 +489,6 @@ function cleanRequest(payload, { needsMessage }) {
 }
 
 module.exports = {
-  frameMessage, toWireText, FrameReader, parseAck, validateTarget, sendMessage, testConnection, cleanRequest, visibleText, hexDump,
+  frameMessage, toWireText, FrameReader, parseAck, validateTarget, MllpSession, sendMessage, testConnection, cleanRequest, visibleText, hexDump,
   MAX_FRAME_BYTES, DEFAULT_CONNECT_TIMEOUT_MS, DEFAULT_REPLY_TIMEOUT_MS,
 };
