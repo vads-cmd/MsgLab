@@ -8,6 +8,9 @@ const { explain } = require('./src/hl7/explainer');
 const { generate } = require('./src/hl7/generator');
 const { generateBulk } = require('./src/hl7/bulk');
 const files = require('./src/files');
+const mllp = require('./src/mllp');
+const { sendBatch, cleanBatchRequest } = require('./src/send-batch');
+const { buildReportCsv, reportFileName, MAX_RECORDS } = require('./src/send-report');
 const settingsStore = require('./src/settings');
 const { buildMenuTemplate } = require('./src/menu');
 const { ABOUT } = require('./src/about');
@@ -75,10 +78,11 @@ let lastFolder = null;
 let controlSettings = {};
 let defaultFolders = { save: null, export: null };
 let favoriteTypes = [];
+let connectionProfiles = [];
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
 let writing = Promise.resolve();
 function persistSettings() {
-  const snapshot = { controls: controlSettings, folder: lastFolder, folders: defaultFolders, favorites: favoriteTypes };
+  const snapshot = { controls: controlSettings, folder: lastFolder, folders: defaultFolders, favorites: favoriteTypes, profiles: connectionProfiles };
   // one write after the other, so two quick saves cannot mix
   writing = writing.then(() => settingsStore.saveSettings(settingsFile(), snapshot)).catch((err) => console.error('Could not save settings:', err.message));
   return writing;
@@ -93,15 +97,67 @@ function rememberFolder(folder) {
 function applyTheme(value) {
   nativeTheme.themeSource = settingsStore.THEMES.has(value) ? value : 'system';
 }
+
+// Sending: the connection is made here, never in the page. Each request has an ID so it can be cancelled.
+const runningSends = new Map();
+
+async function runSend(payload, { needsMessage, action }) {
+  const request = mllp.cleanRequest(payload, { needsMessage });
+  if (request.error) return { ok: false, outcome: 'invalid-input', message: request.error, warnings: [] };
+  const controller = new AbortController();
+  runningSends.set(request.requestId, controller);
+  try {
+    return await action({ ...request.options, signal: controller.signal });
+  } finally {
+    runningSends.delete(request.requestId);
+  }
+}
+
+ipcMain.handle('mllp:send', (_event, payload) => runSend(payload, { needsMessage: true, action: mllp.sendMessage }));
+ipcMain.handle('mllp:test', (_event, payload) => runSend(payload, { needsMessage: false, action: mllp.testConnection }));
+// Bulk sending: one run at a time. Progress goes to the window that asked, after each message and before each pause.
+let batchRunning = false;
+
+const batchRefused = (message) => ({ status: 'invalid-settings', message, total: 0, attempted: 0, accepted: 0, failed: 0, reconnects: 0, results: [] });
+
+ipcMain.handle('mllp:sendBatch', async (event, payload) => {
+  const request = cleanBatchRequest(payload);
+  if (request.error) return batchRefused(request.error);
+  if (batchRunning) return batchRefused('A bulk send is already running.');
+  batchRunning = true;
+  const controller = new AbortController();
+  runningSends.set(request.requestId, controller);
+  const stopWithWindow = () => controller.abort();
+  event.sender.once('destroyed', stopWithWindow);
+  const onProgress = (progress) => {
+    if (!event.sender.isDestroyed()) event.sender.send('send:progress', { requestId: request.requestId, ...progress });
+  };
+  try {
+    return await sendBatch({ ...request.options, signal: controller.signal, onProgress });
+  } finally {
+    batchRunning = false;
+    runningSends.delete(request.requestId);
+    if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', stopWithWindow);
+  }
+});
+
+ipcMain.handle('mllp:cancel', (_event, requestId) => {
+  runningSends.get(asText(requestId))?.abort();
+});
+
 ipcMain.handle('app:setTheme', (_event, value) => {
   applyTheme(value);
   return nativeTheme.themeSource;
 });
 
-ipcMain.handle('settings:load', () => ({ ids: [...settingsStore.REMEMBERED_CONTROLS], controls: controlSettings, folders: defaultFolders, favorites: favoriteTypes }));
+ipcMain.handle('settings:load', () => ({ ids: [...settingsStore.REMEMBERED_CONTROLS], controls: controlSettings, folders: defaultFolders, favorites: favoriteTypes, profiles: connectionProfiles }));
 ipcMain.handle('settings:setFavorites', (_event, list) => {
   favoriteTypes = settingsStore.cleanFavorites(list);
   return persistSettings().then(() => favoriteTypes);
+});
+ipcMain.handle('settings:setProfiles', (_event, list) => {
+  connectionProfiles = settingsStore.cleanProfiles(list);
+  return persistSettings().then(() => connectionProfiles);
 });
 ipcMain.handle('settings:save', (_event, controls) => {
   controlSettings = settingsStore.cleanSettings({ controls }).controls;
@@ -172,6 +228,25 @@ ipcMain.handle('file:save', async (event, payload) => {
     savedPaths.set(event.sender.id, target);
     rememberFolder(path.dirname(target));
     return { ok: true, fileName: path.basename(target), bytes: data.length, warning };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// The results of a bulk send as a CSV file. The page sends the result records, the place comes from the dialog.
+ipcMain.handle('report:save', async (event, records) => {
+  if (!Array.isArray(records) || records.length === 0 || records.length > MAX_RECORDS) return { ok: false, error: 'There are no results to save.' };
+  try {
+    const chosen = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: 'Save the send report',
+      defaultPath: path.join(await startFolder('export'), reportFileName()),
+      filters: [{ name: 'CSV files', extensions: ['csv'] }, { name: 'All files', extensions: ['*'] }],
+    });
+    if (chosen.canceled || !chosen.filePath) return { ok: false, canceled: true };
+    // the byte order mark lets Excel read the text as UTF-8
+    await files.writeFile(chosen.filePath, Buffer.from('\uFEFF' + buildReportCsv(records), 'utf8'));
+    rememberFolder(path.dirname(chosen.filePath));
+    return { ok: true, fileName: path.basename(chosen.filePath), rows: records.length };
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -359,6 +434,7 @@ app.whenReady().then(async () => {
   lastFolder = saved.folder;
   defaultFolders = saved.folders;
   favoriteTypes = saved.favorites;
+  connectionProfiles = saved.profiles;
   applyTheme(controlSettings['app-theme']);
   setUpMenu();
   createWindow();

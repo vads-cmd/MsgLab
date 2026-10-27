@@ -18,7 +18,7 @@
     <button type="button" class="nav-item active" id="nav-editor" data-testid="nav-editor" data-view="editor" aria-current="page"><span class="icon icon-validation" data-testid="nav-editor-icon" aria-hidden="true"></span><span class="nav-label" data-testid="nav-editor-label">Editor</span></button>
     <button type="button" class="nav-item" id="nav-generate" data-testid="nav-generate" data-view="generate"><span class="icon icon-generate" data-testid="nav-generate-icon" aria-hidden="true"></span><span class="nav-label" data-testid="nav-generate-label">Generate</span></button>
     <button type="button" class="nav-item" id="nav-bulk" data-testid="nav-bulk" data-view="bulk"><span class="icon icon-bulk" data-testid="nav-bulk-icon" aria-hidden="true"></span><span class="nav-label" data-testid="nav-bulk-label">Bulk</span></button>
-    <button type="button" class="nav-item" id="nav-send" data-testid="nav-send" data-view="send" disabled title="Sending comes in a later step"><span class="icon icon-sending" data-testid="nav-send-icon" aria-hidden="true"></span><span class="nav-label" data-testid="nav-send-label">Send</span></button>
+    <button type="button" class="nav-item" id="nav-send" data-testid="nav-send" data-view="send"><span class="icon icon-sending" data-testid="nav-send-icon" aria-hidden="true"></span><span class="nav-label" data-testid="nav-send-label">Send</span></button>
     <span class="nav-spacer"></span>
     <button type="button" class="nav-item" id="nav-settings" data-testid="nav-settings" data-view="settings"><span class="icon icon-settings" data-testid="nav-settings-icon" aria-hidden="true"></span><span class="nav-label" data-testid="nav-settings-label">Settings</span></button>
   </nav>
@@ -202,6 +202,114 @@
       </div>
     </section>
 
+    <section class="view" id="view-send" data-testid="view-send" hidden>
+      <h2 class="view-title" data-testid="send-title">Send</h2>
+
+      <fieldset class="card-group" data-testid="send-card-server">
+        <legend data-testid="send-card-server-title">Server</legend>
+        <p class="view-hint" data-testid="send-server-hint">The message goes to this MLLP server over TCP: connect, send, wait for the ACK, disconnect.</p>
+        <div class="settings-row" data-testid="send-profile-row">
+          <label data-testid="send-profile-label">Saved connection
+            <select id="send-profile" data-testid="send-profile">
+              <option value="" selected>Not saved</option>
+            </select>
+          </label>
+          <label data-testid="send-profile-name-label">Name
+            <input type="text" id="send-profile-name" data-testid="send-profile-name" placeholder="for example Test server" maxlength="60" autocomplete="off">
+          </label>
+          <button type="button" id="send-profile-save" data-testid="send-profile-save">Save</button>
+          <button type="button" id="send-profile-delete" data-testid="send-profile-delete" class="quiet" disabled>Delete</button>
+        </div>
+        <output id="send-profile-status" data-testid="send-profile-status" class="gen-status" aria-live="polite"></output>
+        <div class="settings-row" data-testid="send-server-row">
+          <label data-testid="send-host-label">Host
+            <input type="text" id="send-host" data-testid="send-host" placeholder="localhost or 10.0.0.5" maxlength="253" autocomplete="off" spellcheck="false">
+          </label>
+          <label data-testid="send-port-label">Port
+            <input type="number" id="send-port" data-testid="send-port" value="2575" min="1" max="65535" step="1">
+          </label>
+          <label data-testid="send-connect-timeout-label">Connect timeout (seconds)
+            <input type="number" id="send-connect-timeout" data-testid="send-connect-timeout" value="10" min="1" max="600" step="1">
+          </label>
+          <label data-testid="send-reply-timeout-label">ACK timeout (seconds)
+            <input type="number" id="send-reply-timeout" data-testid="send-reply-timeout" value="30" min="1" max="600" step="1">
+          </label>
+          <label data-testid="send-encoding-label">Encoding
+            <select id="send-encoding" data-testid="send-encoding">
+              <option value="utf-8" selected>UTF-8</option>
+              <option value="windows-1252">Windows-1252</option>
+            </select>
+          </label>
+        </div>
+        <div class="send-actions" data-testid="send-test-row">
+          <button type="button" id="send-test" data-testid="send-test">Test connection</button>
+          <label class="file-check" data-testid="send-test-message-label"><input type="checkbox" id="send-test-message" data-testid="send-test-message"> Also send the message from the editor (it reaches the server)</label>
+        </div>
+        <output id="send-test-status" data-testid="send-test-status" class="gen-status" aria-live="polite"></output>
+      </fieldset>
+
+      <fieldset class="card-group" data-testid="send-card-message">
+        <legend data-testid="send-card-message-title">Message</legend>
+        <p class="view-hint" data-testid="send-message-hint">Sends the message that is in the Editor.</p>
+        <output id="send-message-summary" data-testid="send-message-summary" class="send-summary"></output>
+        <div class="send-actions" data-testid="send-go-row">
+          <button type="button" id="send-go" data-testid="send-go" class="primary">Send</button>
+          <button type="button" id="send-cancel" data-testid="send-cancel" hidden>Cancel</button>
+        </div>
+        <output id="send-status" data-testid="send-status" class="gen-status" aria-live="polite"></output>
+        <div id="send-result" data-testid="send-result" class="send-result" hidden>
+          <ul id="send-warnings" data-testid="send-warnings" class="send-warnings" hidden></ul>
+          <details id="send-ack-details" data-testid="send-ack-details">
+            <summary data-testid="send-ack-summary">ACK message</summary>
+            <pre id="send-ack-text" data-testid="send-ack-text" class="send-raw"></pre>
+            <button type="button" id="send-copy-ack" data-testid="send-copy-ack" class="quiet">Copy ACK</button>
+          </details>
+          <details id="send-raw-details" data-testid="send-raw-details">
+            <summary data-testid="send-raw-summary">Raw reply</summary>
+            <pre id="send-raw-visible" data-testid="send-raw-visible" class="send-raw"></pre>
+            <pre id="send-raw-hex" data-testid="send-raw-hex" class="send-raw"></pre>
+          </details>
+        </div>
+      </fieldset>
+      <fieldset class="card-group" data-testid="send-card-bulk">
+        <legend data-testid="send-card-bulk-title">Bulk send</legend>
+        <p class="view-hint" data-testid="send-bulk-hint">Sends the messages generated in the Bulk tab over one connection, one after the other, and waits for each ACK.</p>
+        <output id="send-bulk-summary" data-testid="send-bulk-summary" class="send-summary"></output>
+        <div class="settings-row" data-testid="send-bulk-options">
+          <label data-testid="send-rate-label">Pace
+            <select id="send-rate" data-testid="send-rate">
+              <option value="60" selected>1 message per minute</option>
+              <option value="30">1 message every 30 seconds</option>
+              <option value="10">1 message every 10 seconds</option>
+              <option value="5">1 message every 5 seconds</option>
+              <option value="1">1 message per second</option>
+              <option value="0">No pause (as fast as the ACKs arrive)</option>
+              <option value="custom">Custom...</option>
+            </select>
+          </label>
+          <label id="send-delay-custom-label" data-testid="send-delay-custom-label" hidden>Seconds between messages
+            <input type="number" id="send-delay-custom" data-testid="send-delay-custom" value="60" min="0" max="3600" step="1">
+          </label>
+          <label class="file-check" data-testid="send-stop-on-error-label"><input type="checkbox" id="send-stop-on-error" data-testid="send-stop-on-error"> Stop if a message is not accepted</label>
+        </div>
+        <output id="send-bulk-estimate" data-testid="send-bulk-estimate" class="send-summary"></output>
+        <div class="send-actions" data-testid="send-bulk-actions">
+          <button type="button" id="send-bulk-go" data-testid="send-bulk-go" class="primary">Send all...</button>
+          <button type="button" id="send-bulk-cancel" data-testid="send-bulk-cancel" hidden>Cancel</button>
+          <button type="button" id="send-bulk-export" data-testid="send-bulk-export" hidden>Save report (CSV)...</button>
+        </div>
+        <progress id="send-bulk-progress" data-testid="send-bulk-progress" class="send-progress" value="0" max="1" hidden></progress>
+        <output id="send-bulk-status" data-testid="send-bulk-status" class="gen-status" aria-live="polite"></output>
+        <output id="send-bulk-export-status" data-testid="send-bulk-export-status" class="gen-status" aria-live="polite"></output>
+        <div id="send-bulk-results" data-testid="send-bulk-results" class="bulk-table-wrap" hidden>
+          <table class="bulk-table" data-testid="send-bulk-table">
+            <thead data-testid="send-bulk-table-head"><tr><th data-testid="send-col-number">#</th><th data-testid="send-col-type">Type</th><th data-testid="send-col-control-id">Control ID</th><th data-testid="send-col-result">Result</th><th data-testid="send-col-time">Time (ms)</th><th data-testid="send-col-details">Details</th></tr></thead>
+            <tbody id="send-bulk-rows" data-testid="send-bulk-rows"></tbody>
+          </table>
+        </div>
+      </fieldset>
+    </section>
+
     <section class="view" id="view-settings" data-testid="view-settings" hidden>
       <h2 class="view-title" data-testid="settings-title">Settings</h2>
       <fieldset class="card-group" data-testid="settings-card-appearance">
@@ -258,6 +366,15 @@
     </section>
   </main>
 </div>
+
+<dialog id="send-confirm" data-testid="send-confirm" class="confirm" aria-labelledby="send-confirm-title">
+  <h2 id="send-confirm-title" data-testid="send-confirm-title" class="confirm-title">Send the messages?</h2>
+  <p id="send-confirm-text" data-testid="send-confirm-text" class="confirm-text"></p>
+  <form method="dialog" class="confirm-actions" data-testid="send-confirm-actions">
+    <button value="cancel" id="send-confirm-no" data-testid="send-confirm-no" autofocus>Cancel</button>
+    <button value="send" id="send-confirm-yes" data-testid="send-confirm-yes" class="primary">Send</button>
+  </form>
+</dialog>
 
 <dialog id="about" data-testid="about" class="about" aria-labelledby="about-name">
   <img class="about-logo" data-testid="about-logo" src="assets/app-icon.png" alt="">

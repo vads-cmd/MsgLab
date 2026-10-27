@@ -619,6 +619,14 @@ async function generateBulk(window) {
 }
 
 /**
+ * Wait until bulk generation is done (status shows "Done")
+ */
+async function waitForBulkDone(window, timeout = 10000) {
+  // gives up quietly after the timeout; the caller's own checks then report what is wrong
+  await tid(window, 'bulk-status').filter({ hasText: /^Done$/ }).waitFor({ timeout }).catch(() => {});
+}
+
+/**
  * Copy all bulk messages to clipboard
  */
 async function copyBulkAll(window) {
@@ -738,6 +746,419 @@ async function takeScreenshotOnFailure(window, testInfo) {
   }
 }
 
+/* ---- Send helpers ---- */
+
+/**
+ * Set the server host in the Send view
+ */
+async function setSendHost(window, host) {
+  await tid(window, 'send-host').fill(host);
+  await window.waitForTimeout(100);
+}
+
+/**
+ * Set the server port in the Send view
+ */
+async function setSendPort(window, port) {
+  await tid(window, 'send-port').fill(String(port));
+  await window.waitForTimeout(100);
+}
+
+/**
+ * Set the connect timeout in the Send view
+ */
+async function setSendConnectTimeout(window, seconds) {
+  await tid(window, 'send-connect-timeout').fill(String(seconds));
+  await window.waitForTimeout(100);
+}
+
+/**
+ * Set the ACK reply timeout in the Send view
+ */
+async function setSendReplyTimeout(window, seconds) {
+  await tid(window, 'send-reply-timeout').fill(String(seconds));
+  await window.waitForTimeout(100);
+}
+
+/**
+ * Set the encoding in the Send view (utf-8 or windows-1252)
+ */
+async function setSendEncoding(window, encoding) {
+  await tid(window, 'send-encoding').selectOption(encoding);
+  await window.waitForTimeout(100);
+}
+
+/**
+ * Click the Test connection button
+ */
+async function clickSendTest(window) {
+  await tid(window, 'send-test').click();
+}
+
+/**
+ * Click the Send button
+ */
+async function clickSendGo(window) {
+  await tid(window, 'send-go').click();
+}
+
+/**
+ * Check the "Also send the message from the editor" checkbox on Test connection
+ */
+async function setSendTestMessage(window, checked) {
+  if (checked) {
+    await tid(window, 'send-test-message').check();
+  } else {
+    await tid(window, 'send-test-message').uncheck();
+  }
+  await window.waitForTimeout(100);
+}
+
+/**
+ * Get the Send status text (after clicking Send)
+ */
+async function getSendStatus(window) {
+  return tid(window, 'send-status').textContent();
+}
+
+/**
+ * Get the Test connection status text
+ */
+async function getSendTestStatus(window) {
+  return tid(window, 'send-test-status').textContent();
+}
+
+/**
+ * Get the message summary text in the Send view
+ */
+async function getSendSummary(window) {
+  return tid(window, 'send-message-summary').textContent();
+}
+
+/**
+ * Check if the Send result section is visible
+ */
+async function isSendResultVisible(window) {
+  return tid(window, 'send-result').isVisible();
+}
+
+/**
+ * Get the ACK text from the result details
+ */
+async function getSendAckText(window) {
+  return tid(window, 'send-ack-text').textContent();
+}
+
+/**
+ * Check if the ACK details section is visible
+ */
+async function isSendAckVisible(window) {
+  return !(await tid(window, 'send-ack-details').isHidden());
+}
+
+/**
+ * Check if the raw reply details section is visible
+ */
+async function isSendRawVisible(window) {
+  return !(await tid(window, 'send-raw-details').isHidden());
+}
+
+/**
+ * Get the raw reply visible text
+ */
+async function getSendRawVisible(window) {
+  return tid(window, 'send-raw-visible').textContent();
+}
+
+/**
+ * Get the raw reply hex dump
+ */
+async function getSendRawHex(window) {
+  return tid(window, 'send-raw-hex').textContent();
+}
+
+/**
+ * Get the number of warning items in the send result
+ */
+async function getSendWarningCount(window) {
+  const locator = window.locator('li[data-testid^="send-warning-"]');
+  return locator.count();
+}
+
+/**
+ * Get the text of a specific warning (1-indexed)
+ */
+async function getSendWarningText(window, index) {
+  return tid(window, `send-warning-${index}`).textContent();
+}
+
+/**
+ * Check if the Send button is disabled
+ */
+async function isSendGoDisabled(window) {
+  return tid(window, 'send-go').isDisabled();
+}
+
+/**
+ * Check if the Test connection button is disabled
+ */
+async function isSendTestDisabled(window) {
+  return tid(window, 'send-test').isDisabled();
+}
+
+/**
+ * Check if the Cancel button is visible (during sending)
+ */
+async function isSendCancelVisible(window) {
+  return !(await tid(window, 'send-cancel').isHidden());
+}
+
+/**
+ * Set a connection profile name
+ */
+async function setProfileName(window, name) {
+  await tid(window, 'send-profile-name').fill(name);
+  await window.waitForTimeout(100);
+}
+
+/**
+ * Click the Save profile button
+ */
+async function clickProfileSave(window) {
+  await tid(window, 'send-profile-save').click();
+  await window.waitForTimeout(300);
+}
+
+/**
+ * Click the Delete profile button
+ */
+async function clickProfileDelete(window) {
+  await tid(window, 'send-profile-delete').click();
+  await window.waitForTimeout(300);
+}
+
+/**
+ * Get the profile status text
+ */
+async function getProfileStatus(window) {
+  return tid(window, 'send-profile-status').textContent();
+}
+
+/**
+ * Get the selected profile name from the dropdown
+ */
+async function getSelectedProfile(window) {
+  return tid(window, 'send-profile').inputValue();
+}
+
+/**
+ * Select a profile from the dropdown
+ */
+async function selectProfile(window, name) {
+  await tid(window, 'send-profile').selectOption(name);
+  await window.waitForTimeout(300);
+}
+
+/**
+ * Get the send status element CSS class (ok/error)
+ */
+async function getSendStatusClass(window) {
+  return tid(window, 'send-status').getAttribute('class');
+}
+
+/**
+ * Get the test status element CSS class (ok/error)
+ */
+async function getSendTestStatusClass(window) {
+  return tid(window, 'send-test-status').getAttribute('class');
+}
+
+/* ---- Bulk send helpers ---- */
+
+/**
+ * Set the send pace (rate) dropdown
+ */
+async function setSendRate(window, value) {
+  await tid(window, 'send-rate').selectOption(value);
+  await window.waitForTimeout(200);
+}
+
+/**
+ * Set a custom delay between messages (seconds)
+ */
+async function setSendDelayCustom(window, seconds) {
+  await tid(window, 'send-delay-custom').fill(String(seconds));
+  await window.waitForTimeout(100);
+}
+
+/**
+ * Check the "Stop if a message is not accepted" checkbox
+ */
+async function setSendStopOnError(window, checked) {
+  if (checked) {
+    await tid(window, 'send-stop-on-error').check();
+  } else {
+    await tid(window, 'send-stop-on-error').uncheck();
+  }
+  await window.waitForTimeout(100);
+}
+
+/**
+ * Click the "Send all..." button in the Bulk send card
+ */
+async function clickSendBulkGo(window) {
+  await tid(window, 'send-bulk-go').click();
+}
+
+/**
+ * Click the Cancel button during bulk send
+ */
+async function clickSendBulkCancel(window) {
+  await tid(window, 'send-bulk-cancel').click();
+}
+
+/**
+ * Click the "Save report (CSV)..." button
+ */
+async function clickSendBulkExport(window) {
+  await tid(window, 'send-bulk-export').click();
+  await window.waitForTimeout(300);
+}
+
+/**
+ * Get the bulk send summary text
+ */
+async function getSendBulkSummary(window) {
+  return tid(window, 'send-bulk-summary').textContent();
+}
+
+/**
+ * Get the bulk send estimate text (pace description)
+ */
+async function getSendBulkEstimate(window) {
+  return tid(window, 'send-bulk-estimate').textContent();
+}
+
+/**
+ * Get the bulk send status text
+ */
+async function getSendBulkStatus(window) {
+  return tid(window, 'send-bulk-status').textContent();
+}
+
+/**
+ * Get the bulk send status CSS class (ok/error)
+ */
+async function getSendBulkStatusClass(window) {
+  return tid(window, 'send-bulk-status').getAttribute('class');
+}
+
+/**
+ * Get the bulk export status text
+ */
+async function getSendBulkExportStatus(window) {
+  return tid(window, 'send-bulk-export-status').textContent();
+}
+
+/**
+ * Check if the bulk send results table is visible
+ */
+async function isSendBulkResultsVisible(window) {
+  const hidden = await tid(window, 'send-bulk-results').getAttribute('hidden');
+  return hidden === null;
+}
+
+/**
+ * Check if the bulk send progress bar is visible
+ */
+async function isSendBulkProgressVisible(window) {
+  const hidden = await tid(window, 'send-bulk-progress').getAttribute('hidden');
+  return hidden === null;
+}
+
+/**
+ * Get the number of rows in the bulk send results table
+ */
+async function getSendBulkRowCount(window) {
+  const locator = window.locator('tr[data-testid^="send-row-"]');
+  return locator.count();
+}
+
+/**
+ * Get the text of a cell in a bulk send result row (1-indexed)
+ */
+async function getSendBulkRowCell(window, rowIndex, cellName) {
+  return tid(window, `send-row-${rowIndex}-${cellName}`).textContent();
+}
+
+/**
+ * Check if the confirm dialog is open
+ */
+async function isConfirmDialogOpen(window) {
+  const open = await tid(window, 'send-confirm').getAttribute('open');
+  return open !== null;
+}
+
+/**
+ * Click the "Send" button in the confirm dialog
+ */
+async function clickConfirmYes(window) {
+  await tid(window, 'send-confirm-yes').click();
+  await window.waitForTimeout(200);
+}
+
+/**
+ * Click the "Cancel" button in the confirm dialog
+ */
+async function clickConfirmNo(window) {
+  await tid(window, 'send-confirm-no').click();
+  await window.waitForTimeout(200);
+}
+
+/**
+ * Get the confirm dialog title
+ */
+async function getConfirmDialogTitle(window) {
+  return tid(window, 'send-confirm-title').textContent();
+}
+
+/**
+ * Get the confirm dialog body text
+ */
+async function getConfirmDialogText(window) {
+  return tid(window, 'send-confirm-text').textContent();
+}
+
+/**
+ * Check if the custom delay label is visible
+ */
+async function isCustomDelayLabelVisible(window) {
+  return !(await tid(window, 'send-delay-custom-label').isHidden());
+}
+
+/**
+ * Check if the Send all button is disabled
+ */
+async function isSendBulkGoDisabled(window) {
+  return tid(window, 'send-bulk-go').isDisabled();
+}
+
+/**
+ * Check if the Save report button is visible
+ */
+async function isSendBulkExportVisible(window) {
+  const hidden = await tid(window, 'send-bulk-export').getAttribute('hidden');
+  return hidden === null;
+}
+
+/**
+ * Check if the Cancel button is visible during bulk send
+ */
+async function isSendBulkCancelVisible(window) {
+  const hidden = await tid(window, 'send-bulk-cancel').getAttribute('hidden');
+  return hidden === null;
+}
+
 module.exports = {
   HL7_MESSAGES,
   waitForWindow,
@@ -786,6 +1207,7 @@ module.exports = {
   getAboutLicense,
   getAboutOwner,
   generateBulk,
+  waitForBulkDone,
   copyBulkAll,
   selectAllBulkTypes,
   selectNoBulkTypes,
@@ -811,4 +1233,60 @@ module.exports = {
   waitForFile,
   waitForFileText,
   takeScreenshotOnFailure,
+  // Send helpers
+  setSendHost,
+  setSendPort,
+  setSendConnectTimeout,
+  setSendReplyTimeout,
+  setSendEncoding,
+  clickSendTest,
+  clickSendGo,
+  setSendTestMessage,
+  getSendStatus,
+  getSendTestStatus,
+  getSendSummary,
+  isSendResultVisible,
+  getSendAckText,
+  isSendAckVisible,
+  isSendRawVisible,
+  getSendRawVisible,
+  getSendRawHex,
+  getSendWarningCount,
+  getSendWarningText,
+  isSendGoDisabled,
+  isSendTestDisabled,
+  isSendCancelVisible,
+  setProfileName,
+  clickProfileSave,
+  clickProfileDelete,
+  getProfileStatus,
+  getSelectedProfile,
+  selectProfile,
+  getSendStatusClass,
+  getSendTestStatusClass,
+  // Bulk send helpers
+  setSendRate,
+  setSendDelayCustom,
+  setSendStopOnError,
+  clickSendBulkGo,
+  clickSendBulkCancel,
+  clickSendBulkExport,
+  getSendBulkSummary,
+  getSendBulkEstimate,
+  getSendBulkStatus,
+  getSendBulkStatusClass,
+  getSendBulkExportStatus,
+  isSendBulkResultsVisible,
+  isSendBulkProgressVisible,
+  getSendBulkRowCount,
+  getSendBulkRowCell,
+  isConfirmDialogOpen,
+  clickConfirmYes,
+  clickConfirmNo,
+  getConfirmDialogTitle,
+  getConfirmDialogText,
+  isCustomDelayLabelVisible,
+  isSendBulkGoDisabled,
+  isSendBulkExportVisible,
+  isSendBulkCancelVisible,
 };

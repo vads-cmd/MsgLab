@@ -92,9 +92,9 @@ test.describe('UI Navigation', () => {
     await expect(tid(window, 'nav-settings')).toBeVisible();
   });
 
-  test('Send button is disabled', async () => {
+  test('Send button is enabled', async () => {
     const disabled = await isSendDisabled(window);
-    expect(disabled).toBe(true);
+    expect(disabled).toBe(false);
   });
 
   test('shows editor view by default', async () => {

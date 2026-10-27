@@ -10,11 +10,11 @@
 
 1. `npm test` and `npm run test:all` pass. Sonar has no open findings.
 2. `package.json` has the version to release, and it is committed and pushed.
-3. Build on each system, or let CI do it:
+3. Build on each system or let CI do it:
    - macOS: `npm run dist:mac` (ad-hoc signed by `scripts/adhoc-sign.js`)
    - Windows: `npm run dist:win`
    - Linux: `npm run dist:linux` (needs `rpm` tooling and `libcrypt.so.1`, for example `libxcrypt-compat` on Fedora-like systems)
-4. Start each installer once: it opens, shows the right name and icon, and Save and Open work.
+4. Start each installer once: it opens, shows the right name, icon and Save and Open work.
 5. Tag and push: `git tag v0.1.29 && git push origin v0.1.29`.
 6. On GitHub, create a release from the tag, paste the notes below and attach the installers.
 
@@ -41,7 +41,7 @@ Do not attach `builder-*.yml`, `*.blockmap` or `latest-*.yml` unless automatic u
 - 
 
 ### Install
-Download the file for your system below. macOS and Windows warn on first start because the app is not signed yet. See the [README](../README.md#download-and-install) for the steps.
+Download the file for your system below. macOS and Windows warn on the first start because the app is not signed yet. See the [README](../README.md#download-and-install) for the steps.
 
 **Known issues**
 - 

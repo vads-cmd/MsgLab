@@ -86,7 +86,7 @@ body {
   background: transparent;
   cursor: pointer;
 }
-.logo-button:hover:not(:disabled) { filter: brightness(1.1); }
+.logo-button[hidden] { display: none; }
 
 .app-logo {
   width: 28px;
@@ -232,7 +232,8 @@ button {
   white-space: nowrap;
   cursor: pointer;
 }
-button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+button[hidden] { display: none; }
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); filter: brightness(1.1); }
 button:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
 button:disabled { opacity: 0.5; cursor: default; }
 
@@ -986,3 +987,50 @@ button.star.on:hover:not(:disabled) {
   border-color: var(--accent-2);
   color: var(--accent-2);
 }
+
+/* ---- send ---- */
+
+.gen-status.ok { color: var(--ok); }
+#send-host { width: 18em; }
+#send-port, #send-connect-timeout, #send-reply-timeout { width: 8em; }
+.send-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s3) var(--s5);
+  align-items: center;
+  margin-top: var(--s3);
+}
+.send-summary { display: block; margin-top: var(--s2); font-size: 13px; }
+.send-result { margin-top: var(--s3); display: flex; flex-direction: column; gap: var(--s3); }
+.send-result[hidden], .send-warnings[hidden], .send-result details[hidden] { display: none; }
+.send-warnings { margin: 0; padding-left: var(--s5); font-size: 12px; color: var(--danger); }
+.send-raw {
+  margin: var(--s2) 0;
+  padding: var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: auto;
+  max-height: 16em;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.send-progress { width: 100%; margin-top: var(--s3); }
+.send-progress[hidden], #send-bulk-results[hidden], #send-delay-custom-label[hidden] { display: none; }
+#send-bulk-results { margin-top: var(--s3); }
+#send-delay-custom { width: 8em; }
+.confirm {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  padding: var(--s5);
+  border: 1px solid var(--outline);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--fg);
+}
+.confirm::backdrop { background: rgba(0, 0, 0, 0.45); }
+.confirm-title { margin: 0 0 var(--s3); font-size: 18px; }
+.confirm-text { margin: 0 0 var(--s4); white-space: pre-line; overflow-wrap: anywhere; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: var(--s3); margin: 0; }

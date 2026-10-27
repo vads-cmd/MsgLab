@@ -859,7 +859,7 @@ buildManual();
 // The main process says which controls are remembered; their values are applied once
 // everything else is set up, and saved shortly after each change.
 async function setUpSettings() {
-  const { ids, controls, folders, favorites: favoriteList } = await window.hl7.loadSettings();
+  const { ids, controls, folders, favorites: favoriteList, profiles: profileList } = await window.hl7.loadSettings();
   setFavorites(favoriteList ?? []);
   showFolder('save', folders.save);
   showFolder('export', folders.export);
@@ -872,6 +872,7 @@ async function setUpSettings() {
     else continue;
     control.dispatchEvent(new Event('change', { bubbles: true }));
   }
+  loadProfiles(profileList ?? []);
   let timer = null;
   const save = () => {
     const current = {};
@@ -960,6 +961,10 @@ function showView(name) {
     if (active) item.setAttribute('aria-current', 'page');
     else item.removeAttribute('aria-current');
   }
+  if (name === 'send') {
+    updateSendSummary();
+    updateBulkSummary();
+  }
 }
 
 for (const item of navItems) item.addEventListener('click', () => showView(item.dataset.view));
@@ -1035,3 +1040,502 @@ document.getElementById('about-open').addEventListener('click', () => showAbout(
 aboutDialog.addEventListener('click', (event) => {
   if (event.target === aboutDialog) aboutDialog.close();
 });
+
+/* ---- sending ---- */
+
+const sendGo = document.getElementById('send-go');
+const sendTest = document.getElementById('send-test');
+const sendCancel = document.getElementById('send-cancel');
+const sendStatus = document.getElementById('send-status');
+const sendTestStatus = document.getElementById('send-test-status');
+const sendSummary = document.getElementById('send-message-summary');
+const sendResult = document.getElementById('send-result');
+const bulkGo = document.getElementById('send-bulk-go');
+const bulkCancel = document.getElementById('send-bulk-cancel');
+let busyKind = 'single'; // what is running: 'single' or 'bulk'
+let sendBusy = false;
+let activeRequestId = null;
+let requestCounter = 0;
+
+/** What the Editor holds, in a few words; null when there is nothing to send. */
+function describeEditorMessage(text) {
+  const lines = text.split(/\r\n|\r|\n/).filter((line) => line.trim() !== '');
+  if (lines.length === 0) return null;
+  let first = lines[0];
+  if (first.codePointAt(0) === 0x0b) first = first.slice(1);
+  const count = `${lines.length} ${lines.length === 1 ? 'segment' : 'segments'}`;
+  if (!first.startsWith('MSH') || first.length < 4) return `Does not start with an MSH segment, ${count}`;
+  const fields = first.split(first[3]);
+  return `${fields[8] || 'type not set'}, control ID ${fields[9] || 'not set'}, ${count}`;
+}
+
+function refreshSendButtons() {
+  const hasMessage = describeEditorMessage(input.value) !== null;
+  sendGo.disabled = sendBusy || !hasMessage;
+  sendTest.disabled = sendBusy;
+  sendCancel.hidden = !(sendBusy && busyKind === 'single');
+  bulkGo.disabled = sendBusy || bulkMessages.length === 0;
+  bulkCancel.hidden = !(sendBusy && busyKind === 'bulk');
+}
+
+function updateSendSummary() {
+  sendSummary.textContent = describeEditorMessage(input.value) ?? 'The editor is empty. Write or generate a message first.';
+  refreshSendButtons();
+}
+
+/** A result line: green text for success, red for a problem; the words say the same. */
+function showSendLine(element, message, kind) {
+  element.textContent = message;
+  element.classList.toggle('error', kind === 'error');
+  element.classList.toggle('ok', kind === 'ok');
+}
+
+function clearSendResult() {
+  sendResult.hidden = true;
+  document.getElementById('send-warnings').replaceChildren();
+  document.getElementById('send-warnings').hidden = true;
+  document.getElementById('send-ack-text').textContent = '';
+  document.getElementById('send-raw-visible').textContent = '';
+  document.getElementById('send-raw-hex').textContent = '';
+  document.getElementById('send-ack-details').hidden = true;
+  document.getElementById('send-raw-details').hidden = true;
+}
+
+function showSendResult(result) {
+  clearSendResult();
+  const warnings = document.getElementById('send-warnings');
+  for (const warning of result.warnings ?? []) {
+    const item = document.createElement('li');
+    item.textContent = warning;
+    item.dataset.testid = `send-warning-${warnings.children.length + 1}`;
+    warnings.append(item);
+  }
+  warnings.hidden = warnings.children.length === 0;
+  const ackDetails = document.getElementById('send-ack-details');
+  if (result.ackText) {
+    document.getElementById('send-ack-text').textContent = result.ackText.replaceAll('\r', '\n').trimEnd();
+    ackDetails.hidden = false;
+  }
+  const rawDetails = document.getElementById('send-raw-details');
+  if (result.reply?.bytes > 0) {
+    document.getElementById('send-raw-visible').textContent = result.reply.visible;
+    document.getElementById('send-raw-hex').textContent = result.reply.hex;
+    rawDetails.hidden = false;
+  }
+  sendResult.hidden = warnings.hidden && ackDetails.hidden && rawDetails.hidden;
+}
+
+const sendOutcomeText = (result) => (result.ok ? result.message : `Failed: ${result.message}`);
+
+function connectionPayload() {
+  requestCounter += 1;
+  activeRequestId = `req-${Date.now()}-${requestCounter}`;
+  return {
+    requestId: activeRequestId,
+    host: fieldValue('send-host'),
+    port: fieldValue('send-port'),
+    connectTimeoutSeconds: fieldValue('send-connect-timeout'),
+    replyTimeoutSeconds: fieldValue('send-reply-timeout'),
+    encoding: fieldValue('send-encoding'),
+  };
+}
+
+/** Runs one request with the buttons locked; the Cancel button stops the request that is running. */
+async function withSending(task, kind = 'single') {
+  busyKind = kind;
+  sendBusy = true;
+  refreshSendButtons();
+  try {
+    return await task();
+  } finally {
+    activeRequestId = null;
+    sendBusy = false;
+    refreshSendButtons();
+  }
+}
+
+async function sendEditorMessage(statusElement) {
+  const payload = { ...connectionPayload(), message: input.value };
+  showSendLine(statusElement, `Sending to ${payload.host.trim()}:${payload.port}...`, null);
+  const result = await window.hl7.sendMessage(payload);
+  showSendLine(statusElement, sendOutcomeText(result), result.ok ? 'ok' : 'error');
+  showSendResult(result);
+  return result;
+}
+
+async function sendClicked() {
+  clearSendResult();
+  showSendLine(sendTestStatus, '', null);
+  await withSending(() => sendEditorMessage(sendStatus));
+}
+
+async function testClicked() {
+  clearSendResult();
+  showSendLine(sendStatus, '', null);
+  await withSending(async () => {
+    const payload = connectionPayload();
+    showSendLine(sendTestStatus, `Connecting to ${payload.host.trim()}:${payload.port}...`, null);
+    const test = await window.hl7.testConnection(payload);
+    showSendLine(sendTestStatus, sendOutcomeText(test), test.ok ? 'ok' : 'error');
+    if (!test.ok || !document.getElementById('send-test-message').checked) return;
+    if (describeEditorMessage(input.value) === null) {
+      showSendLine(sendTestStatus, `${test.message} The editor is empty, so no test message was sent.`, 'error');
+      return;
+    }
+    const sent = await sendEditorMessage(sendStatus);
+    showSendLine(sendTestStatus, `${test.message} Test message: ${sendOutcomeText(sent)}`, sent.ok ? 'ok' : 'error');
+  });
+}
+
+sendGo.addEventListener('click', () => sendClicked().catch(console.error));
+sendTest.addEventListener('click', () => testClicked().catch(console.error));
+sendCancel.addEventListener('click', () => {
+  if (activeRequestId) window.hl7.cancelSend(activeRequestId).catch(console.error);
+});
+document.getElementById('send-copy-ack').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(document.getElementById('send-ack-text').textContent);
+  } catch (error) {
+    console.error(error);
+  }
+});
+input.addEventListener('input', updateSendSummary);
+updateSendSummary();
+
+/* ---- saved connections ---- */
+
+const profileSelect = document.getElementById('send-profile');
+const profileName = document.getElementById('send-profile-name');
+const profileSave = document.getElementById('send-profile-save');
+const profileDelete = document.getElementById('send-profile-delete');
+const profileStatus = document.getElementById('send-profile-status');
+const MAX_SAVED_CONNECTIONS = 100;
+let profiles = [];
+
+function currentConnection() {
+  return {
+    host: fieldValue('send-host').trim(),
+    port: Number(fieldValue('send-port')),
+    connectTimeout: Number(fieldValue('send-connect-timeout')),
+    replyTimeout: Number(fieldValue('send-reply-timeout')),
+    encoding: fieldValue('send-encoding'),
+  };
+}
+
+function sameConnection(profile, connection) {
+  return ['host', 'port', 'connectTimeout', 'replyTimeout', 'encoding'].every((key) => profile[key] === connection[key]);
+}
+
+const sameName = (a, b) => a.toLowerCase() === b.toLowerCase();
+
+/** The list always shows which saved connection the fields match, or "Not saved". With several equal ones the named one wins. */
+function syncProfileSelect() {
+  const connection = currentConnection();
+  const matches = profiles.filter((profile) => sameConnection(profile, connection));
+  const match = matches.find((profile) => sameName(profile.name, profileName.value.trim())) ?? matches[0];
+  profileSelect.value = match ? match.name : '';
+  profileDelete.disabled = !match;
+}
+
+function renderProfiles() {
+  const options = profiles.map((profile, index) => {
+    const option = tid(document.createElement('option'), `send-profile-option-${index + 1}`);
+    option.value = profile.name;
+    option.textContent = profile.name;
+    return option;
+  });
+  profileSelect.replaceChildren(profileSelect.options[0], ...options);
+  syncProfileSelect();
+}
+
+/** Called once the remembered settings are applied. */
+function loadProfiles(list) {
+  profiles = list;
+  renderProfiles();
+  if (profileSelect.value !== '' && profileName.value.trim() === '') profileName.value = profileSelect.value;
+}
+
+function setConnectionField(id, value, eventName) {
+  const control = document.getElementById(id);
+  control.value = String(value);
+  control.dispatchEvent(new Event(eventName, { bubbles: true }));
+}
+
+function applyProfile(profile) {
+  setConnectionField('send-host', profile.host, 'input');
+  setConnectionField('send-port', profile.port, 'input');
+  setConnectionField('send-connect-timeout', profile.connectTimeout, 'input');
+  setConnectionField('send-reply-timeout', profile.replyTimeout, 'input');
+  setConnectionField('send-encoding', profile.encoding, 'change');
+  profileName.value = profile.name;
+  syncProfileSelect();
+}
+
+const wholeSeconds = (value) => Number.isInteger(value) && value >= 1 && value <= 600;
+
+/** What is wrong with the connection that is about to be saved, or null. */
+function profileProblem(name, connection, isNew) {
+  if (name === '') return 'Enter a name for the connection.';
+  if (connection.host === '') return 'Enter the host first.';
+  if (!Number.isInteger(connection.port) || connection.port < 1 || connection.port > 65535) return 'The port must be a whole number from 1 to 65535.';
+  if (!wholeSeconds(connection.connectTimeout) || !wholeSeconds(connection.replyTimeout)) return 'The timeouts must be whole seconds from 1 to 600.';
+  if (isNew && profiles.length >= MAX_SAVED_CONNECTIONS) return `You can save up to ${MAX_SAVED_CONNECTIONS} connections.`;
+  return null;
+}
+
+async function saveProfile() {
+  const name = profileName.value.trim();
+  const connection = currentConnection();
+  const index = profiles.findIndex((profile) => sameName(profile.name, name));
+  const problem = profileProblem(name, connection, index === -1);
+  if (problem) {
+    showSendLine(profileStatus, problem, 'error');
+    return;
+  }
+  const next = [...profiles];
+  if (index === -1) next.push({ name, ...connection });
+  else next[index] = { name, ...connection };
+  const saved = await window.hl7.setProfiles(next);
+  if (!saved.some((profile) => sameName(profile.name, name))) {
+    showSendLine(profileStatus, 'The connection could not be saved. Check the host name and the name.', 'error');
+    return;
+  }
+  profiles = saved;
+  renderProfiles();
+  showSendLine(profileStatus, `${index === -1 ? 'Saved' : 'Updated'} "${name}".`, 'ok');
+}
+
+async function deleteProfile() {
+  const name = profileSelect.value;
+  if (name === '') return;
+  profiles = await window.hl7.setProfiles(profiles.filter((profile) => profile.name !== name));
+  renderProfiles();
+  showSendLine(profileStatus, `Deleted "${name}".`, 'ok');
+}
+
+profileSelect.addEventListener('change', () => {
+  const profile = profiles.find((item) => item.name === profileSelect.value);
+  if (!profile) return;
+  applyProfile(profile);
+  showSendLine(profileStatus, `Loaded "${profile.name}".`, 'ok');
+});
+for (const id of ['send-host', 'send-port', 'send-connect-timeout', 'send-reply-timeout']) document.getElementById(id).addEventListener('input', syncProfileSelect);
+document.getElementById('send-encoding').addEventListener('change', syncProfileSelect);
+profileName.addEventListener('input', syncProfileSelect);
+profileSave.addEventListener('click', () => saveProfile().catch(console.error));
+profileDelete.addEventListener('click', () => deleteProfile().catch(console.error));
+
+/* ---- bulk sending ---- */
+
+const sendBulkStatus = document.getElementById('send-bulk-status');
+const bulkProgress = document.getElementById('send-bulk-progress');
+const bulkResults = document.getElementById('send-bulk-results');
+const bulkRows = document.getElementById('send-bulk-rows');
+const confirmDialog = document.getElementById('send-confirm');
+const MAX_DELAY_SECONDS = 3600;
+let bulkBase = '';
+let bulkFailing = false;
+let bulkNextAt = null;
+let bulkTicker = null;
+
+const OUTCOME_LABELS = {
+  accepted: 'Accepted',
+  'application-error': 'Error',
+  rejected: 'Rejected',
+  'invalid-ack': 'Invalid reply',
+  'not-framed': 'Not MLLP',
+  'connect-failed': 'No connection',
+  'connect-timeout': 'No connection',
+  'reply-timeout': 'No ACK',
+  closed: 'Connection closed',
+  cancelled: 'Cancelled',
+  'invalid-input': 'Not sent',
+};
+
+/** The pause between messages in seconds, or null when the custom value is not usable. */
+function chosenDelay() {
+  const rate = fieldValue('send-rate');
+  if (rate !== 'custom') return Number(rate);
+  const text = fieldValue('send-delay-custom').trim();
+  const value = Number(text);
+  return text !== '' && Number.isFinite(value) && value >= 0 && value <= MAX_DELAY_SECONDS ? value : null;
+}
+
+function describeDuration(seconds) {
+  if (seconds < 1) return 'less than a second';
+  if (seconds < 90) return `${Math.round(seconds)} seconds`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 90) return `${minutes} minutes`;
+  const rest = minutes % 60;
+  return rest === 0 ? `${Math.floor(minutes / 60)} h` : `${Math.floor(minutes / 60)} h ${rest} min`;
+}
+
+function describePace(count, seconds) {
+  if (count < 2) return 'One message: there is no pause.';
+  if (seconds === 0) return 'No pause: the next message goes out as soon as the ACK arrives.';
+  return `One message every ${seconds} seconds: about ${describeDuration((count - 1) * seconds)} in all, the first goes out at once.`;
+}
+
+function updateBulkSummary() {
+  const count = bulkMessages.length;
+  document.getElementById('send-bulk-summary').textContent = count === 0
+    ? 'There are no messages yet. Generate them in the Bulk tab first.'
+    : `${plural(count, 'message')} from the Bulk tab ${count === 1 ? 'is' : 'are'} ready to send.`;
+  const seconds = chosenDelay();
+  document.getElementById('send-bulk-estimate').textContent = count === 0 || seconds === null ? '' : describePace(count, seconds);
+  document.getElementById('send-delay-custom-label').hidden = fieldValue('send-rate') !== 'custom';
+  refreshSendButtons();
+}
+
+const clock = (milliseconds) => {
+  const total = Math.max(0, Math.ceil(milliseconds / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+};
+
+function renderBulkStatus() {
+  const next = bulkNextAt === null ? '' : ` Next message in ${clock(bulkNextAt - Date.now())}.`;
+  showSendLine(sendBulkStatus, bulkBase + next, bulkFailing ? 'error' : null);
+}
+
+function stopTicker() {
+  clearInterval(bulkTicker);
+  bulkTicker = null;
+  bulkNextAt = null;
+}
+
+function appendBulkRow(record) {
+  const row = tid(document.createElement('tr'), `send-row-${record.number}`);
+  const label = OUTCOME_LABELS[record.outcome] ?? record.outcome;
+  const cells = [
+    ['number', record.number],
+    ['type', record.type],
+    ['control-id', record.controlId],
+    ['result', record.ackCode ? `${label} (${record.ackCode})` : label],
+    ['time', record.ms],
+    ['details', record.reconnected ? `Connected again. ${record.message}` : record.message],
+  ];
+  for (const [name, value] of cells) row.append(tid(el('td', '', String(value)), `send-row-${record.number}-${name}`));
+  row.classList.toggle('failed', !record.ok);
+  bulkRows.append(row);
+  bulkResults.hidden = false;
+  bulkResults.scrollTop = bulkResults.scrollHeight;
+}
+
+function onSendProgress(progress) {
+  if (progress.requestId !== activeRequestId) return;
+  if (progress.kind === 'sent') {
+    stopTicker();
+    appendBulkRow(progress.record);
+    bulkProgress.value = progress.done;
+    bulkFailing = progress.failed > 0;
+    bulkBase = `Sent ${progress.done} of ${progress.total}: ${progress.accepted} accepted, ${progress.failed} not accepted.`;
+    renderBulkStatus();
+  } else if (progress.kind === 'waiting') {
+    bulkNextAt = progress.nextAt;
+    renderBulkStatus();
+    bulkTicker = setInterval(renderBulkStatus, 1000);
+  }
+}
+window.hl7.onSendProgress(onSendProgress);
+
+function describeBulkEnd(summary) {
+  const last = summary.results.at(-1);
+  const counts = `${summary.accepted} accepted, ${summary.failed} not accepted`;
+  const again = summary.reconnects > 0 ? ` The connection was opened again ${plural(summary.reconnects, 'time')}.` : '';
+  switch (summary.status) {
+    case 'finished':
+      return { text: `Done: ${plural(summary.total, 'message')} sent, ${counts}.${again}`, failing: summary.failed > 0 };
+    case 'stopped':
+      return { text: `Stopped after message ${last.number} of ${summary.total} (${counts}): ${last.message}`, failing: true };
+    case 'cancelled':
+      return { text: `Cancelled after ${summary.attempted} of ${summary.total} messages (${counts}).`, failing: summary.failed > 0 };
+    case 'connection-failed':
+      return { text: `Stopped after ${summary.attempted} of ${summary.total} messages (${counts}): ${last.message}`, failing: true };
+    default:
+      return { text: summary.message ?? 'The messages could not be sent.', failing: true };
+  }
+}
+
+function showBulkEnd(summary) {
+  stopTicker();
+  lastBulkResults = summary.results;
+  bulkExport.hidden = summary.results.length === 0;
+  for (const record of summary.results) {
+    if (!document.querySelector(`[data-testid="send-row-${record.number}"]`)) appendBulkRow(record);
+  }
+  const end = describeBulkEnd(summary);
+  bulkFailing = end.failing;
+  bulkBase = end.text;
+  bulkProgress.value = summary.attempted;
+  bulkProgress.hidden = summary.attempted === 0;
+  renderBulkStatus();
+  showSendLine(sendBulkStatus, end.text, end.failing ? 'error' : 'ok');
+}
+
+/** Asks before anything is sent: how many, where to, how long. Resolves true when the user agrees. */
+function confirmBulk(count, target, seconds, stopOnError) {
+  document.getElementById('send-confirm-title').textContent = `Send ${plural(count, 'message')}?`;
+  const lines = [`To ${target}`, describePace(count, seconds)];
+  lines.push(stopOnError ? 'The run stops at the first message that is not accepted.' : 'The run goes on when a message is not accepted.');
+  document.getElementById('send-confirm-text').textContent = lines.join('\n');
+  return new Promise((resolve) => {
+    confirmDialog.addEventListener('close', () => resolve(confirmDialog.returnValue === 'send'), { once: true });
+    confirmDialog.returnValue = '';
+    confirmDialog.showModal();
+  });
+}
+
+async function runBulk(messages, seconds, stopOnError) {
+  clearSendResult();
+  showSendLine(sendStatus, '', null);
+  showSendLine(sendTestStatus, '', null);
+  bulkRows.replaceChildren();
+  bulkResults.hidden = true;
+  lastBulkResults = [];
+  bulkExport.hidden = true;
+  showSendLine(bulkExportStatus, '', null);
+  bulkProgress.max = messages.length;
+  bulkProgress.value = 0;
+  bulkProgress.hidden = false;
+  bulkFailing = false;
+  await withSending(async () => {
+    const payload = { ...connectionPayload(), messages, delaySeconds: seconds, stopOnError };
+    bulkBase = `Connecting to ${payload.host.trim()}:${payload.port}...`;
+    renderBulkStatus();
+    showBulkEnd(await window.hl7.sendBatch(payload));
+  }, 'bulk');
+}
+
+async function bulkClicked() {
+  const seconds = chosenDelay();
+  const host = fieldValue('send-host').trim();
+  const problem = bulkMessages.length === 0 ? 'There are no messages to send.'
+    : seconds === null ? `Enter the seconds between messages, from 0 to ${MAX_DELAY_SECONDS}.`
+      : host === '' ? 'Enter the host first.' : null;
+  if (problem) {
+    showSendLine(sendBulkStatus, problem, 'error');
+    return;
+  }
+  const stopOnError = document.getElementById('send-stop-on-error').checked;
+  if (!(await confirmBulk(bulkMessages.length, `${host}:${fieldValue('send-port')}`, seconds, stopOnError))) return;
+  await runBulk(bulkMessages.map((message) => message.text), seconds, stopOnError);
+}
+
+const bulkExport = document.getElementById('send-bulk-export');
+const bulkExportStatus = document.getElementById('send-bulk-export-status');
+let lastBulkResults = [];
+
+async function exportBulkReport() {
+  const result = await window.hl7.saveReport(lastBulkResults);
+  if (result.canceled) return;
+  showSendLine(bulkExportStatus, result.ok ? `Saved ${plural(result.rows, 'row')} to ${result.fileName}.` : result.error, result.ok ? 'ok' : 'error');
+}
+bulkExport.addEventListener('click', () => exportBulkReport().catch(console.error));
+
+bulkGo.addEventListener('click', () => bulkClicked().catch(console.error));
+bulkCancel.addEventListener('click', () => {
+  if (activeRequestId) window.hl7.cancelSend(activeRequestId).catch(console.error);
+});
+document.getElementById('send-rate').addEventListener('change', updateBulkSummary);
+document.getElementById('send-delay-custom').addEventListener('input', updateBulkSummary);
+updateBulkSummary();

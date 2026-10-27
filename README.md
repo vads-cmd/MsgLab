@@ -9,9 +9,8 @@
   Windows, macOS and Linux.
 </p>
 
-> **Beta.** This is the first public release of MsgLab, and the application is still in beta.
+> **Beta.** MsgLab is still in beta.
 > Expect rough edges, and please [report problems](https://github.com/vads-cmd/MsgLab/issues) you find.
-> Sending messages over MLLP is planned for a later release.
 
 ## Features
 
@@ -19,6 +18,10 @@
 - **Generate** a single message: ADT A01, A02, A03, A08, A18, A40, A60, ORM O01, ORU R01 and ACK, for HL7 versions 2.3 to 2.8. Sending and receiving facilities are configurable.
 - **Bulk generation** of many related messages (for example complete patient journeys) to fill an empty test database.
 - **Files**: open and save messages, export bulk results as files, with CR, LF or CRLF line endings and an optional FHS/BHS batch wrapper. Wrapped and unwrapped files can both be imported.
+- **Sending over MLLP** to a test server, with the ACK shown and checked (AA/CA accepted, AE/CE error, AR/CR rejected, control ID compared):
+  - **Single message**: connect, send, wait for the ACK with a timeout, disconnect.
+  - **Bulk**: send the messages of the Bulk tab on one connection, with a pace (default one per minute), an optional stop at the first message that is not accepted, a progress bar, a results table and a CSV report. The connection is opened again if the server closes it.
+  - **Test connection** and saved connections (name, host, port, timeouts, encoding). Plain TCP only for now, no TLS.
 - **Settings**: light, dark or system theme, default folders for saving and exporting, favorite message types.
 
 ## Download and install
