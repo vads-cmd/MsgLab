@@ -9,3 +9,4 @@ trace/
 /.junie/
 /.idea/
 /install/
+.DS_Store
