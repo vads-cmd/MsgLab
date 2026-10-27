@@ -86,7 +86,7 @@ body {
   background: transparent;
   cursor: pointer;
 }
-.logo-button:hover:not(:disabled) { filter: brightness(1.1); }
+.logo-button[hidden] { display: none; }
 
 .app-logo {
   width: 28px;
@@ -232,7 +232,8 @@ button {
   white-space: nowrap;
   cursor: pointer;
 }
-button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+button[hidden] { display: none; }
+button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); filter: brightness(1.1); }
 button:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
 button:disabled { opacity: 0.5; cursor: default; }
 
