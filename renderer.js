@@ -1011,6 +1011,7 @@ function showView(name) {
   }
   if (name === 'send') {
     updateSendSummary();
+    refreshPreview().catch(console.error);
     updateBulkSummary();
   }
 }
@@ -1130,6 +1131,81 @@ function updateSendSummary() {
   sendSummary.textContent = describeEditorMessage(input.value) ?? 'The editor is empty. Write or generate a message first.';
   refreshSendButtons();
 }
+
+/* The message as it will be sent, and what the validator says about it (a warning only: sending is never blocked) */
+
+const sendPreview = document.getElementById('send-preview');
+const sendValidation = document.getElementById('send-validation');
+const sendIssues = document.getElementById('send-validation-issues');
+const MAX_SHOWN_ISSUES = 5;
+let validationRequest = 0;
+
+function showIssues(issues) {
+  const items = issues.slice(0, MAX_SHOWN_ISSUES).map((issue, index) => {
+    const label = issue.severity === 'error' ? 'Error' : 'Warning';
+    return tid(el('li', issue.severity === 'error' ? 'error' : '', `${label}: ${issue.message}`), `send-validation-issue-${index + 1}`);
+  });
+  if (issues.length > MAX_SHOWN_ISSUES) items.push(tid(el('li', '', `and ${issues.length - MAX_SHOWN_ISSUES} more`), 'send-validation-more'));
+  sendIssues.replaceChildren(...items);
+  sendIssues.hidden = items.length === 0;
+}
+
+function describeValidation(result) {
+  const errors = result.counts.error;
+  const warnings = result.counts.warning;
+  if (errors + warnings === 0) return { text: 'Validation: no problems found.', kind: 'ok' };
+  return { text: `Validation: ${plural(errors, 'error')}, ${plural(warnings, 'warning')}. The message can still be sent.`, kind: errors > 0 ? 'error' : null };
+}
+
+async function refreshPreview() {
+  const text = input.value;
+  const hasMessage = describeEditorMessage(text) !== null;
+  sendPreview.hidden = !hasMessage;
+  sendPreview.textContent = hasMessage ? text : '';
+  const request = ++validationRequest;
+  if (!hasMessage) {
+    showSendLine(sendValidation, '', null);
+    showIssues([]);
+    return;
+  }
+  const result = await window.hl7.validate(text);
+  if (request !== validationRequest) return; // the text changed while the validator was working
+  const shown = describeValidation(result);
+  showSendLine(sendValidation, shown.text, shown.kind);
+  showIssues(result.issues.filter((issue) => issue.severity === 'error' || issue.severity === 'warning'));
+}
+
+/* Single message or bulk: one panel at a time; the choice is remembered through a hidden field */
+
+const sendModeField = document.getElementById('send-mode');
+const SEND_MODES = ['single', 'bulk'];
+
+function setSendMode(value) {
+  const mode = SEND_MODES.includes(value) ? value : 'single';
+  for (const name of SEND_MODES) {
+    const button = document.getElementById(`send-mode-${name}`);
+    button.classList.toggle('active', name === mode);
+    button.setAttribute('aria-selected', String(name === mode));
+    document.getElementById(`send-panel-${name}`).hidden = name !== mode;
+  }
+  sendModeField.value = mode;
+}
+
+for (const name of SEND_MODES) {
+  const button = document.getElementById(`send-mode-${name}`);
+  button.addEventListener('click', () => {
+    setSendMode(name);
+    sendModeField.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  button.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const other = SEND_MODES.find((mode) => mode !== name);
+    document.getElementById(`send-mode-${other}`).click();
+    document.getElementById(`send-mode-${other}`).focus();
+  });
+}
+sendModeField.addEventListener('change', () => setSendMode(sendModeField.value));
 
 /** A result line: green text for success, red for a problem; the words say the same. */
 function showSendLine(element, message, kind) {
@@ -1522,10 +1598,11 @@ function showBulkEnd(summary) {
 }
 
 /** Asks before anything is sent: how many, where to, how long. Resolves true when the user agrees. */
-function confirmBulk(count, target, seconds, stopOnError) {
+function confirmBulk(count, target, seconds, stopOnError, checks) {
   document.getElementById('send-confirm-title').textContent = `Send ${plural(count, 'message')}?`;
   const lines = [`To ${target}`, describePace(count, seconds)];
   lines.push(stopOnError ? 'The run stops at the first message that is not accepted.' : 'The run goes on when a message is not accepted.');
+  if (checks.count > 0) lines.push(`${checks.count} of ${count} messages have validation errors (the first is message ${checks.first}). They are sent anyway.`);
   document.getElementById('send-confirm-text').textContent = lines.join('\n');
   return new Promise((resolve) => {
     confirmDialog.addEventListener('close', () => resolve(confirmDialog.returnValue === 'send'), { once: true });
@@ -1555,6 +1632,18 @@ async function runBulk(messages, seconds, stopOnError) {
   }, 'bulk');
 }
 
+/** Counts the messages that have validation errors; a failure of the check never stops the sending. */
+async function checkBulkMessages(texts) {
+  try {
+    const found = await window.hl7.validateMany(texts);
+    const bad = found.flatMap((entry, index) => (entry.errors > 0 ? [index + 1] : []));
+    return { count: bad.length, first: bad[0] ?? null };
+  } catch (error) {
+    console.error(error);
+    return { count: 0, first: null };
+  }
+}
+
 /** Why the bulk run cannot start, or null when it can. */
 function bulkProblem(seconds, host) {
   if (bulkMessages.length === 0) return 'There are no messages to send.';
@@ -1572,8 +1661,10 @@ async function bulkClicked() {
     return;
   }
   const stopOnError = document.getElementById('send-stop-on-error').checked;
-  if (!(await confirmBulk(bulkMessages.length, `${host}:${fieldValue('send-port')}`, seconds, stopOnError))) return;
-  await runBulk(bulkMessages.map((message) => message.text), seconds, stopOnError);
+  const texts = bulkMessages.map((message) => message.text);
+  const checks = await checkBulkMessages(texts);
+  if (!(await confirmBulk(texts.length, `${host}:${fieldValue('send-port')}`, seconds, stopOnError, checks))) return;
+  await runBulk(texts, seconds, stopOnError);
 }
 
 const bulkExport = document.getElementById('send-bulk-export');

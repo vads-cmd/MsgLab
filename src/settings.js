@@ -10,7 +10,7 @@ const REMEMBERED_CONTROLS = new Set([
   'bulk-count', 'bulk-minutes', 'bulk-mode',
   'export-mode', 'export-batch', 'file-eol', 'file-encoding', 'file-mllp', 'app-theme',
   'send-host', 'send-port', 'send-connect-timeout', 'send-reply-timeout', 'send-encoding',
-  'send-rate', 'send-delay-custom', 'send-stop-on-error',
+  'send-rate', 'send-delay-custom', 'send-stop-on-error', 'send-mode',
 ]);
 
 // The colour themes the app can show; 'system' follows the operating system
