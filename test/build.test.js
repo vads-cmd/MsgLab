@@ -82,3 +82,10 @@ test('linux icons are provided in the standard freedesktop sizes', () => {
 test('the Windows installer file name has no spaces (GitHub renames them)', () => {
   assert.equal(build.nsis.artifactName, 'MsgLab-Setup-${version}.${ext}');
 });
+
+test('the window gets its own icon on Linux, from a file that is packed into the app', () => {
+  const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
+  assert.match(main, /process\.platform === 'linux' && \{ icon: path\.join\(__dirname, 'assets', 'linux-icons', '512x512\.png'\) \}/);
+  assert.ok(fs.existsSync(path.join(root, 'assets', 'linux-icons', '512x512.png')));
+  assert.ok(build.files.includes('assets/**/*'));
+});

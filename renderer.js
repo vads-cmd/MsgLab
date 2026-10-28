@@ -195,6 +195,54 @@ input.addEventListener('scroll', () => {
 });
 if (typeof ResizeObserver === 'function') new ResizeObserver(updateLineNumbers).observe(input);
 
+/** Start and end (end excluded, new line not included) of the lines that touch the selection. */
+function selectedLinesRange(text, start, end) {
+  const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+  const last = end > start && text[end - 1] === '\n' ? end - 1 : end; // a selection that ends at the start of a line does not include that line
+  const next = text.indexOf('\n', last);
+  return { lineStart, lineEnd: next === -1 ? text.length : next };
+}
+
+/** Inserts text in the editor the way typing does, so Undo works; falls back where execCommand is missing. */
+function insertInEditor(text) {
+  // NOSONAR on the next line: execCommand is deprecated, but it is the only way to type into a textarea
+  // so that Undo and Redo keep working; setRangeText below does not touch the undo history.
+  const typed = typeof document.execCommand === 'function' && document.execCommand('insertText', false, text); // NOSONAR
+  if (typed) return;
+  input.setRangeText(text, input.selectionStart, input.selectionEnd, 'end');
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** Ctrl+D / Cmd+D: copies the current line (or all selected lines) below itself and selects the copy. */
+function duplicateLines() {
+  const { selectionStart: start, selectionEnd: end, value } = input;
+  const { lineStart, lineEnd } = selectedLinesRange(value, start, end);
+  const block = value.slice(lineStart, lineEnd);
+  input.setSelectionRange(lineEnd, lineEnd);
+  insertInEditor(`\n${block}`);
+  const shift = block.length + 1;
+  input.setSelectionRange(start + shift, end + shift);
+}
+
+input.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'd') {
+    event.preventDefault();
+    duplicateLines();
+  }
+});
+
+/** Clicking a line number selects that line, with its line break, so Copy or Delete takes the whole line. */
+gutterInner.addEventListener('click', (event) => {
+  const row = event.target.closest('[data-testid^="message-line-"]');
+  if (!row) return;
+  const index = Array.prototype.indexOf.call(gutterInner.children, row);
+  const lines = input.value.split('\n');
+  const start = lines.slice(0, index).reduce((sum, line) => sum + line.length + 1, 0);
+  const end = Math.min(start + lines[index].length + 1, input.value.length);
+  input.focus();
+  input.setSelectionRange(start, end);
+});
+
 async function run() {
   updateStats();
   updateLineNumbers();
@@ -1378,9 +1426,10 @@ function describePace(count, seconds) {
 
 function updateBulkSummary() {
   const count = bulkMessages.length;
+  const verb = count === 1 ? 'is' : 'are';
   document.getElementById('send-bulk-summary').textContent = count === 0
     ? 'There are no messages yet. Generate them in the Bulk tab first.'
-    : `${plural(count, 'message')} from the Bulk tab ${count === 1 ? 'is' : 'are'} ready to send.`;
+    : `${plural(count, 'message')} from the Bulk tab ${verb} ready to send.`;
   const seconds = chosenDelay();
   document.getElementById('send-bulk-estimate').textContent = count === 0 || seconds === null ? '' : describePace(count, seconds);
   document.getElementById('send-delay-custom-label').hidden = fieldValue('send-rate') !== 'custom';
@@ -1506,12 +1555,18 @@ async function runBulk(messages, seconds, stopOnError) {
   }, 'bulk');
 }
 
+/** Why the bulk run cannot start, or null when it can. */
+function bulkProblem(seconds, host) {
+  if (bulkMessages.length === 0) return 'There are no messages to send.';
+  if (seconds === null) return `Enter the seconds between messages, from 0 to ${MAX_DELAY_SECONDS}.`;
+  if (host === '') return 'Enter the host first.';
+  return null;
+}
+
 async function bulkClicked() {
   const seconds = chosenDelay();
   const host = fieldValue('send-host').trim();
-  const problem = bulkMessages.length === 0 ? 'There are no messages to send.'
-    : seconds === null ? `Enter the seconds between messages, from 0 to ${MAX_DELAY_SECONDS}.`
-      : host === '' ? 'Enter the host first.' : null;
+  const problem = bulkProblem(seconds, host);
   if (problem) {
     showSendLine(sendBulkStatus, problem, 'error');
     return;

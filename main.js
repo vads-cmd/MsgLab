@@ -396,6 +396,8 @@ function createWindow() {
     width: 1200,
     height: 800,
     title: ABOUT.name,
+    // Linux window managers take the taskbar icon from the window itself
+    ...(process.platform === 'linux' && { icon: path.join(__dirname, 'assets', 'linux-icons', '512x512.png') }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -448,6 +450,7 @@ app.whenReady().then(async () => {
 });
 
 // Quit when all windows are closed, except on macOS where apps stay active until Cmd+Q
+// Closing the last window quits the app on every system, macOS included.
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  app.quit();
 });

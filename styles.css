@@ -174,6 +174,7 @@ body {
 
 #view-generate,
 #view-bulk,
+#view-send,
 #view-settings {
   gap: var(--s3);
   padding: var(--s4);
@@ -190,14 +191,31 @@ body {
   color: var(--muted);
 }
 
+/* A card has its title on a tab above its top left corner, so the title never breaks the border */
 .card-group {
-  margin: 0;
-  padding: var(--s3) var(--s4) var(--s4);
+  --tab-h: 30px;
+  position: relative;
+  margin: var(--tab-h) 0 0;
+  padding: var(--s4);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 0 var(--radius) var(--radius) var(--radius);
   background: var(--panel);
 }
-.card-group legend { padding: 0 var(--s2); font-weight: 600; }
+.card-group > legend {
+  position: absolute; /* out of the border, which is what a floated or positioned legend does */
+  top: calc(-1 * var(--tab-h));
+  left: -1px;
+  height: var(--tab-h);
+  padding: 0 var(--s4);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--panel);
+  box-shadow: inset 0 2px 0 var(--accent);
+  font-weight: 600;
+  line-height: calc(var(--tab-h) - 1px);
+  white-space: nowrap;
+}
 .settings-row {
   display: flex;
   flex-wrap: wrap;
@@ -353,6 +371,7 @@ input:disabled { opacity: 0.55; }
 }
 
 .gutter-inner > div { font-variant-numeric: tabular-nums; }
+.gutter-inner > div:hover { color: var(--accent); cursor: pointer; }
 
 /* Hidden copy of the text, used only to measure how tall each wrapped line is */
 .mirror {

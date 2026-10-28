@@ -737,7 +737,7 @@ async function getPlaceholder(window, panelName) {
 async function takeScreenshotOnFailure(window, testInfo) {
   try {
     const screenshot = await window.screenshot({ type: 'png' });
-    testInfo.attach('failure-screenshot.png', {
+    await testInfo.attach('failure-screenshot.png', {
       body: screenshot,
       contentType: 'image/png',
     });
@@ -853,14 +853,14 @@ async function getSendAckText(window) {
  * Check if the ACK details section is visible
  */
 async function isSendAckVisible(window) {
-  return !(await tid(window, 'send-ack-details').isHidden());
+  return tid(window, 'send-ack-details').isVisible();
 }
 
 /**
  * Check if the raw reply details section is visible
  */
 async function isSendRawVisible(window) {
-  return !(await tid(window, 'send-raw-details').isHidden());
+  return tid(window, 'send-raw-details').isVisible();
 }
 
 /**
@@ -910,7 +910,7 @@ async function isSendTestDisabled(window) {
  * Check if the Cancel button is visible (during sending)
  */
 async function isSendCancelVisible(window) {
-  return !(await tid(window, 'send-cancel').isHidden());
+  return tid(window, 'send-cancel').isVisible();
 }
 
 /**
@@ -1133,7 +1133,7 @@ async function getConfirmDialogText(window) {
  * Check if the custom delay label is visible
  */
 async function isCustomDelayLabelVisible(window) {
-  return !(await tid(window, 'send-delay-custom-label').isHidden());
+  return tid(window, 'send-delay-custom-label').isVisible();
 }
 
 /**

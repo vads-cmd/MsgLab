@@ -75,6 +75,247 @@ test.describe('Editor and generator details', () => {
     });
   });
 
+  test.describe('Line duplication (Ctrl/Cmd+D)', () => {
+    test('duplicates the current line when cursor is on a single line', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b\nPV1|c');
+      // Place cursor on the PID line
+      await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        const idx = ta.value.indexOf('PID|b');
+        ta.setSelectionRange(idx, idx);
+      });
+      await tid(window, 'message').press('Control+d');
+      const result = await tid(window, 'message').inputValue();
+      expect(result).toBe('MSH|a\nPID|b\nPID|b\nPV1|c');
+    });
+
+    test('selects the duplicated line', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b\nPV1|c');
+      const textarea = tid(window, 'message');
+      await textarea.click();
+      // Select the entire PID line, then duplicate — the copy should be selected
+      const info = await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        const start = ta.value.indexOf('PID|b');
+        const end = start + 5; // "PID|b"
+        ta.setSelectionRange(start, end);
+        // Trigger duplication via the keydown handler
+        const evt = new KeyboardEvent('keydown', {
+          key: 'd', code: 'KeyD', ctrlKey: true, bubbles: true, cancelable: true,
+        });
+        ta.dispatchEvent(evt);
+        return {
+          value: ta.value,
+          start: ta.selectionStart,
+          end: ta.selectionEnd,
+          selected: ta.value.substring(ta.selectionStart, ta.selectionEnd),
+        };
+      });
+      expect(info.value).toBe('MSH|a\nPID|b\nPID|b\nPV1|c');
+      // The duplicated PID|b should be selected
+      expect(info.selected).toBe('PID|b');
+    });
+
+    test('duplicates multiple selected lines', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b\nPV1|c\nNK1|d');
+      // Select from start of PID to end of PV1 (two lines)
+      await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        const start = ta.value.indexOf('PID|b');
+        const end = ta.value.indexOf('NK1|d');
+        ta.setSelectionRange(start, end);
+      });
+      await tid(window, 'message').press('Control+d');
+      const result = await tid(window, 'message').inputValue();
+      expect(result).toBe('MSH|a\nPID|b\nPV1|c\nPID|b\nPV1|c\nNK1|d');
+    });
+
+    test('selects the duplicated block after multi-line duplication', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b\nPV1|c');
+      // Select PID|b\nPV1|c
+      await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        const start = ta.value.indexOf('PID|b');
+        const end = ta.value.length;
+        ta.setSelectionRange(start, end);
+      });
+      await tid(window, 'message').press('Control+d');
+      const selection = await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        return ta.value.substring(ta.selectionStart, ta.selectionEnd);
+      });
+      expect(selection).toBe('PID|b\nPV1|c');
+    });
+
+    test('duplicates the line containing the partial selection', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|JOHN\nPV1|c');
+      // Select only part of the PID line
+      await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        const idx = ta.value.indexOf('JOHN');
+        ta.setSelectionRange(idx, idx + 4);
+      });
+      await tid(window, 'message').press('Control+d');
+      const result = await tid(window, 'message').inputValue();
+      expect(result).toBe('MSH|a\nPID|JOHN\nPID|JOHN\nPV1|c');
+    });
+
+    test('duplicates the last line in the editor', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b');
+      await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+      });
+      await tid(window, 'message').press('Control+d');
+      const result = await tid(window, 'message').inputValue();
+      expect(result).toBe('MSH|a\nPID|b\nPID|b');
+    });
+
+    test('duplicates the first line in the editor', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b');
+      await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        ta.setSelectionRange(0, 0);
+      });
+      await tid(window, 'message').press('Control+d');
+      const result = await tid(window, 'message').inputValue();
+      expect(result).toBe('MSH|a\nMSH|a\nPID|b');
+    });
+
+    test('duplicates a single line in an empty-ish editor', async () => {
+      await tid(window, 'message').fill('only-line');
+      await tid(window, 'message').press('Control+d');
+      const result = await tid(window, 'message').inputValue();
+      expect(result).toBe('only-line\nonly-line');
+    });
+
+    test('works with Cmd+D on macOS', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b');
+      await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        ta.setSelectionRange(0, 0);
+      });
+      // Meta key simulates Cmd on macOS; on Linux/Windows it's a no-op for this shortcut,
+      // so we verify the shortcut fires by checking the result
+      await tid(window, 'message').press('Meta+d');
+      const result = await tid(window, 'message').inputValue();
+      // The line should be duplicated
+      expect(result.split('\n').length).toBe(3);
+    });
+
+    test('line numbers update after duplication', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b');
+      await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        ta.setSelectionRange(0, 0);
+      });
+      await tid(window, 'message').press('Control+d');
+      await expect(window.locator('[data-testid^="message-line-"]')).toHaveCount(3);
+      await expect(tid(window, 'message-line-3')).toHaveText('3');
+    });
+  });
+
+  test.describe('Click line number to select line', () => {
+    test('clicking line 1 selects the first line', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b\nPV1|c');
+      await tid(window, 'message-line-1').click();
+      const selection = await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        return ta.value.substring(ta.selectionStart, ta.selectionEnd);
+      });
+      expect(selection).toBe('MSH|a\n');
+    });
+
+    test('clicking line 2 selects the middle line', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b\nPV1|c');
+      await tid(window, 'message-line-2').click();
+      const selection = await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        return ta.value.substring(ta.selectionStart, ta.selectionEnd);
+      });
+      expect(selection).toBe('PID|b\n');
+    });
+
+    test('clicking the last line number selects the last line without trailing newline', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b\nPV1|c');
+      await tid(window, 'message-line-3').click();
+      const selection = await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        return ta.value.substring(ta.selectionStart, ta.selectionEnd);
+      });
+      expect(selection).toBe('PV1|c');
+    });
+
+    test('clicking a line number focuses the editor', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b');
+      // Blur the editor first
+      await window.evaluate(() => document.getElementById('message').blur());
+      await tid(window, 'message-line-1').click();
+      const focused = await window.evaluate(() => document.activeElement?.id);
+      expect(focused).toBe('message');
+    });
+
+    test('clicking on the gutter background does not select anything', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b');
+      // Record selection before click
+      const before = await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        return { start: ta.selectionStart, end: ta.selectionEnd };
+      });
+      // Click on the gutter inner area, not on a specific line number
+      await window.evaluate(() => {
+        const gutter = document.querySelector('[data-testid="message-gutter-inner"]');
+        gutter.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      const after = await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        return { start: ta.selectionStart, end: ta.selectionEnd };
+      });
+      // Selection should not change (no line selected)
+      expect(after.start).toBe(before.start);
+      expect(after.end).toBe(before.end);
+    });
+
+    test('clicking line number in a multi-segment HL7 message', async () => {
+      await pasteMessage(window, HL7_MESSAGES.ADT_A01);
+      // Click the PID segment line (line 3 in the ADT_A01 message, using \r split)
+      await tid(window, 'message-line-3').click();
+      const selection = await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        return ta.value.substring(ta.selectionStart, ta.selectionEnd);
+      });
+      expect(selection.startsWith('PID|')).toBe(true);
+    });
+
+    test('clicking line number selects the whole wrapped line', async () => {
+      const longLine = 'PID|' + 'X'.repeat(200);
+      await tid(window, 'message').fill(`MSH|a\n${longLine}\nPV1|c`);
+      await tid(window, 'message-line-2').click();
+      const selection = await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        return ta.value.substring(ta.selectionStart, ta.selectionEnd);
+      });
+      expect(selection).toBe(`${longLine}\n`);
+    });
+
+    test('consecutive clicks on different lines update selection', async () => {
+      await tid(window, 'message').fill('MSH|a\nPID|b\nPV1|c');
+      await tid(window, 'message-line-1').click();
+      let selection = await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        return ta.value.substring(ta.selectionStart, ta.selectionEnd);
+      });
+      expect(selection).toBe('MSH|a\n');
+
+      await tid(window, 'message-line-3').click();
+      selection = await window.evaluate(() => {
+        const ta = document.getElementById('message');
+        return ta.value.substring(ta.selectionStart, ta.selectionEnd);
+      });
+      expect(selection).toBe('PV1|c');
+    });
+  });
+
   test.describe('Message statistics', () => {
     test('shows the number of segments and characters', async () => {
       await pasteMessage(window, HL7_MESSAGES.ADT_A01);
