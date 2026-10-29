@@ -1161,7 +1161,7 @@ async function refreshPreview() {
   const text = input.value;
   const hasMessage = describeEditorMessage(text) !== null;
   sendPreview.hidden = !hasMessage;
-  sendPreview.textContent = hasMessage ? text : '';
+  sendPreview.value = hasMessage ? text : '';
   const request = ++validationRequest;
   if (!hasMessage) {
     showSendLine(sendValidation, '', null);

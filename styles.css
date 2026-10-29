@@ -718,6 +718,12 @@ input:disabled { opacity: 0.55; }
   transform: translateX(14px);
   background: var(--accent-fg);
 }
+
+/* No sliding for people who asked their system for less motion */
+@media (prefers-reduced-motion: reduce) {
+  .switch input,
+  .switch input::after { transition: none; }
+}
 .switch input:indeterminate::after { transform: translateX(7px); }
 .switch input:focus-visible {
   outline: 2px solid var(--accent);
@@ -1039,10 +1045,14 @@ button.star.on:hover:not(:disabled) {
 .send-panel { display: block; }
 .send-panel[hidden] { display: none; }
 .send-preview {
+  display: block;
+  width: 100%;
   margin: var(--s3) 0 0;
   padding: var(--s2) var(--s3);
-  max-height: 16em;
+  max-height: 24em;
+  resize: vertical;
   overflow: auto;
+  color: var(--fg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--field);
