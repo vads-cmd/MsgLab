@@ -1,17 +1,15 @@
 const { test, expect } = require('@playwright/test');
 const {
-  HL7_MESSAGES, waitForWindow, pasteMessage, goTo, clearDirtyState,
+  waitForWindow, goTo, clearDirtyState,
   closeApp, takeScreenshotOnFailure, launchApp,
   configureBulkGeneration, generateBulk, waitForBulkDone,
   setSendHost, setSendPort, setSendRate, setSendDelayCustom, setSendStopOnError,
-  clickSendBulkGo, clickSendBulkCancel, clickSendBulkExport,
-  getSendBulkSummary, getSendBulkEstimate, getSendBulkStatus, getSendBulkStatusClass,
-  getSendBulkExportStatus,
+  clickSendBulkGo, clickSendBulkCancel, getSendBulkSummary, getSendBulkEstimate, getSendBulkStatus, getSendBulkStatusClass,
   isSendBulkResultsVisible, isSendBulkProgressVisible,
   getSendBulkRowCount, getSendBulkRowCell,
   isConfirmDialogOpen, clickConfirmYes, clickConfirmNo,
   getConfirmDialogTitle, getConfirmDialogText,
-  isCustomDelayLabelVisible, isSendBulkGoDisabled, isSendBulkExportVisible,
+  isSendBulkGoDisabled, isSendBulkExportVisible,
   isSendBulkCancelVisible,
   tid,
 } = require('./helpers');
@@ -30,6 +28,11 @@ test.describe('Bulk send — UI structure', () => {
     window = await waitForWindow(electronApp);
     await clearDirtyState(window);
     await goTo(window, 'send');
+    // Switch to Bulk send mode so the Bulk panel is visible
+    await window.evaluate(() => {
+      document.getElementById('send-mode-bulk').click();
+    });
+    await window.waitForTimeout(300);
   });
 
   test.afterEach(async ({}, testInfo) => {
@@ -39,39 +42,30 @@ test.describe('Bulk send — UI structure', () => {
     await closeApp(electronApp);
   });
 
-  test('shows Bulk send card with legend', async () => {
-    expect(await tid(window, 'send-card-bulk-title').textContent()).toBe('Bulk send');
-  });
-
-  test('shows bulk send hint text', async () => {
-    const hint = await tid(window, 'send-bulk-hint').textContent();
-    expect(hint).toContain('Bulk tab');
-  });
-
-  test('shows empty summary when no bulk messages', async () => {
-    const summary = await getSendBulkSummary(window);
-    expect(summary).toContain('no messages yet');
-  });
-
-  test('has pace dropdown with default 1 per minute', async () => {
-    await expect(tid(window, 'send-rate')).toBeVisible();
-    expect(await tid(window, 'send-rate').inputValue()).toBe('60');
-  });
-
-  test('has all pace options', async () => {
-    const options = await window.locator('#send-rate option').allTextContents();
-    expect(options).toContain('1 message per minute');
-    expect(options).toContain('1 message every 30 seconds');
-    expect(options).toContain('1 message every 10 seconds');
-    expect(options).toContain('1 message every 5 seconds');
-    expect(options).toContain('1 message per second');
-    expect(options).toContain('No pause (as fast as the ACKs arrive)');
-    expect(options).toContain('Custom...');
-  });
-
-  test('custom delay label is hidden by default', async () => {
-    const hidden = await tid(window, 'send-delay-custom-label').getAttribute('hidden');
-    expect(hidden).not.toBe(null);
+  test('shows the Bulk send controls with their defaults and no results yet', async () => {
+    await expect.soft(tid(window, 'send-bulk-hint')).toContainText('Bulk tab');
+    await expect.soft(tid(window, 'send-bulk-summary')).toContainText('no messages yet');
+    await expect.soft(tid(window, 'send-bulk-estimate')).toHaveText('');
+    await expect.soft(tid(window, 'send-rate')).toHaveValue('60');
+    const options = await tid(window, 'send-rate').locator('option').allTextContents();
+    for (const option of [
+      '1 message per minute', '1 message every 30 seconds', '1 message every 10 seconds', '1 message every 5 seconds',
+      '1 message per second', 'No pause (as fast as the ACKs arrive)', 'Custom...',
+    ]) {
+      expect.soft(options).toContain(option);
+    }
+    await expect.soft(tid(window, 'send-delay-custom-label')).toBeHidden();
+    await expect.soft(tid(window, 'send-stop-on-error')).not.toBeChecked();
+    await expect.soft(tid(window, 'send-bulk-go')).toBeDisabled();
+    // nothing has run yet: these parts are in the page but not shown
+    for (const id of ['send-bulk-cancel', 'send-bulk-export', 'send-bulk-progress', 'send-bulk-results']) {
+      await expect.soft(tid(window, id)).toBeHidden();
+    }
+    for (const id of ['send-bulk-status', 'send-bulk-export-status']) await expect.soft(tid(window, id)).toBeAttached();
+    for (const [column, text] of [['number', '#'], ['type', 'Type'], ['control-id', 'Control ID'], ['result', 'Result'], ['time', 'Time (ms)'], ['details', 'Details']]) {
+      await expect.soft(tid(window, `send-col-${column}`)).toHaveText(text);
+    }
+    expect.soft(await isConfirmDialogOpen(window)).toBe(false);
   });
 
   test('custom delay label appears when Custom is selected', async () => {
@@ -87,63 +81,12 @@ test.describe('Bulk send — UI structure', () => {
     expect(await tid(window, 'send-delay-custom').inputValue()).toBe('60');
   });
 
-  test('has stop on error checkbox', async () => {
-    await expect(tid(window, 'send-stop-on-error')).toBeVisible();
-  });
-
-  test('stop on error is unchecked by default', async () => {
-    expect(await tid(window, 'send-stop-on-error').isChecked()).toBe(false);
-  });
-
-  test('has Send all button', async () => {
-    await expect(tid(window, 'send-bulk-go')).toBeVisible();
-  });
-
-  test('Send all button is disabled with no bulk messages', async () => {
-    expect(await isSendBulkGoDisabled(window)).toBe(true);
-  });
-
   test('Send all button is enabled after generating bulk messages', async () => {
     await configureBulkGeneration(window, { count: 5 });
     await generateBulk(window);
     await waitForBulkDone(window);
     await goTo(window, 'send');
     expect(await isSendBulkGoDisabled(window)).toBe(false);
-  });
-
-  test('Cancel button is hidden initially', async () => {
-    expect(await isSendBulkCancelVisible(window)).toBe(false);
-  });
-
-  test('Save report button is hidden initially', async () => {
-    expect(await isSendBulkExportVisible(window)).toBe(false);
-  });
-
-  test('progress bar is hidden initially', async () => {
-    expect(await isSendBulkProgressVisible(window)).toBe(false);
-  });
-
-  test('results table is hidden initially', async () => {
-    expect(await isSendBulkResultsVisible(window)).toBe(false);
-  });
-
-  test('has results table with correct columns', async () => {
-    expect(await tid(window, 'send-col-number').textContent()).toBe('#');
-    expect(await tid(window, 'send-col-type').textContent()).toBe('Type');
-    expect(await tid(window, 'send-col-control-id').textContent()).toBe('Control ID');
-    expect(await tid(window, 'send-col-result').textContent()).toBe('Result');
-    expect(await tid(window, 'send-col-time').textContent()).toBe('Time (ms)');
-    expect(await tid(window, 'send-col-details').textContent()).toBe('Details');
-  });
-
-  test('has status output elements', async () => {
-    expect(await tid(window, 'send-bulk-status').count()).toBe(1);
-    expect(await tid(window, 'send-bulk-export-status').count()).toBe(1);
-  });
-
-  test('estimate is empty when no messages', async () => {
-    const estimate = await getSendBulkEstimate(window);
-    expect(estimate).toBe('');
   });
 
   test('estimate shows pace description after generating messages', async () => {
@@ -165,9 +108,6 @@ test.describe('Bulk send — UI structure', () => {
     expect(summary).toContain('message');
   });
 
-  test('confirm dialog is hidden initially', async () => {
-    expect(await isConfirmDialogOpen(window)).toBe(false);
-  });
 });
 
 // ---------------------------------------------------------------- Confirm dialog
@@ -186,6 +126,11 @@ test.describe('Bulk send — Confirm dialog', () => {
     await generateBulk(window);
     await waitForBulkDone(window);
     await goTo(window, 'send');
+    // Switch to Bulk send mode so the Bulk panel is visible
+    await window.evaluate(() => {
+      document.getElementById('send-mode-bulk').click();
+    });
+    await window.waitForTimeout(300);
     await setSendHost(window, '127.0.0.1');
   });
 
@@ -241,6 +186,14 @@ test.describe('Bulk send — Confirm dialog', () => {
     expect(text).toContain('goes on');
   });
 
+  test('confirm dialog shows no validation errors for valid messages', async () => {
+    await clickSendBulkGo(window);
+    await window.waitForTimeout(500);
+    const text = await getConfirmDialogText(window);
+    // Valid messages should not show validation error line
+    expect(text).not.toContain('validation errors');
+  });
+
   test('Cancel button closes dialog without sending', async () => {
     await clickSendBulkGo(window);
     await window.waitForTimeout(500);
@@ -258,16 +211,6 @@ test.describe('Bulk send — Confirm dialog', () => {
     expect(status).toContain('host');
   });
 
-  test('Send all button is disabled when no bulk messages', async () => {
-    // Launch fresh app without generating bulk messages
-    await closeApp(electronApp);
-    electronApp = await launchApp();
-    window = await waitForWindow(electronApp);
-    await clearDirtyState(window);
-    await goTo(window, 'send');
-    // Button should be disabled with no bulk messages
-    expect(await isSendBulkGoDisabled(window)).toBe(true);
-  });
 });
 
 // ---------------------------------------------------------------- Pace settings
@@ -286,6 +229,11 @@ test.describe('Bulk send — Pace settings', () => {
     await generateBulk(window);
     await waitForBulkDone(window);
     await goTo(window, 'send');
+    // Switch to Bulk send mode so the Bulk panel is visible
+    await window.evaluate(() => {
+      document.getElementById('send-mode-bulk').click();
+    });
+    await window.waitForTimeout(300);
   });
 
   test.afterEach(async ({}, testInfo) => {
@@ -355,6 +303,11 @@ test.describe('Bulk send — Send messages', () => {
     await waitForBulkDone(window);
     // Navigate to Send and configure
     await goTo(window, 'send');
+    // Switch to Bulk send mode so the Bulk panel is visible
+    await window.evaluate(() => {
+      document.getElementById('send-mode-bulk').click();
+    });
+    await window.waitForTimeout(300);
     await setSendHost(window, mockServer.host);
     await setSendPort(window, mockServer.port);
     // Set no pause for speed
@@ -436,15 +389,6 @@ test.describe('Bulk send — Send messages', () => {
     expect(cls).toContain('ok');
   });
 
-  test('Save report button appears after send', async () => {
-    await clickSendBulkGo(window);
-    await window.waitForTimeout(500);
-    await clickConfirmYes(window);
-    await window.waitForTimeout(10000);
-
-    expect(await isSendBulkExportVisible(window)).toBe(true);
-  });
-
   test('Cancel button is hidden after send completes', async () => {
     await clickSendBulkGo(window);
     await window.waitForTimeout(500);
@@ -463,7 +407,7 @@ test.describe('Bulk send — Send messages', () => {
     expect(await isSendBulkGoDisabled(window)).toBe(false);
   });
 
-  test('Cancel button appears during send', async () => {
+  test('Cancel button appears during send and Cancel stops the run', async () => {
     // Use a slow server to give time to check the cancel button
     await closeApp(electronApp);
     await mockServer.close();
@@ -475,6 +419,11 @@ test.describe('Bulk send — Send messages', () => {
     await generateBulk(window);
     await waitForBulkDone(window);
     await goTo(window, 'send');
+    // Switch to Bulk send mode so the Bulk panel is visible
+    await window.evaluate(() => {
+      document.getElementById('send-mode-bulk').click();
+    });
+    await window.waitForTimeout(300);
     await setSendHost(window, mockServer.host);
     await setSendPort(window, mockServer.port);
     await setSendRate(window, '0');
@@ -486,7 +435,10 @@ test.describe('Bulk send — Send messages', () => {
     expect(await isSendBulkCancelVisible(window)).toBe(true);
     // Cancel the send
     await clickSendBulkCancel(window);
-    await window.waitForTimeout(3000);
+    await expect(tid(window, 'send-bulk-status')).toContainText(/Cancelled after/, { timeout: 15000 });
+    expect(await isSendBulkCancelVisible(window)).toBe(false);
+    expect(await isSendBulkGoDisabled(window)).toBe(false);
+    expect(mockServer.received.length).toBeLessThan(3);
   });
 });
 
@@ -510,6 +462,11 @@ test.describe('Bulk send — Stop on error', () => {
     await generateBulk(window);
     await waitForBulkDone(window);
     await goTo(window, 'send');
+    // Switch to Bulk send mode so the Bulk panel is visible
+    await window.evaluate(() => {
+      document.getElementById('send-mode-bulk').click();
+    });
+    await window.waitForTimeout(300);
     await setSendHost(window, mockServer.host);
     await setSendPort(window, mockServer.port);
     await setSendRate(window, '0');
@@ -586,6 +543,11 @@ test.describe('Bulk send — Connection failure', () => {
     await generateBulk(window);
     await waitForBulkDone(window);
     await goTo(window, 'send');
+    // Switch to Bulk send mode so the Bulk panel is visible
+    await window.evaluate(() => {
+      document.getElementById('send-mode-bulk').click();
+    });
+    await window.waitForTimeout(300);
     await setSendHost(window, '127.0.0.1');
     await setSendPort(window, '19999'); // No server listening
     await setSendRate(window, '0');
@@ -634,6 +596,11 @@ test.describe('Bulk send — CSV Export', () => {
     await generateBulk(window);
     await waitForBulkDone(window);
     await goTo(window, 'send');
+    // Switch to Bulk send mode so the Bulk panel is visible
+    await window.evaluate(() => {
+      document.getElementById('send-mode-bulk').click();
+    });
+    await window.waitForTimeout(300);
     await setSendHost(window, mockServer.host);
     await setSendPort(window, mockServer.port);
     await setSendRate(window, '0');
@@ -645,10 +612,6 @@ test.describe('Bulk send — CSV Export', () => {
     }
     await closeApp(electronApp);
     await mockServer.close();
-  });
-
-  test('export button is hidden before any send', async () => {
-    expect(await isSendBulkExportVisible(window)).toBe(false);
   });
 
   test('export button appears after successful send', async () => {
@@ -684,6 +647,11 @@ test.describe('Bulk send — Edge cases', () => {
     window = await waitForWindow(electronApp);
     await clearDirtyState(window);
     await goTo(window, 'send');
+    // Switch to Bulk send mode so the Bulk panel is visible
+    await window.evaluate(() => {
+      document.getElementById('send-mode-bulk').click();
+    });
+    await window.waitForTimeout(300);
   });
 
   test.afterEach(async ({}, testInfo) => {
@@ -698,6 +666,11 @@ test.describe('Bulk send — Edge cases', () => {
     await generateBulk(window);
     await waitForBulkDone(window);
     await goTo(window, 'send');
+    // Re-switch to Bulk mode after navigating from Bulk view
+    await window.evaluate(() => {
+      document.getElementById('send-mode-bulk').click();
+    });
+    await window.waitForTimeout(300);
     const estimate = await getSendBulkEstimate(window);
     expect(estimate).toContain('no pause');
   });

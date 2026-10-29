@@ -248,15 +248,15 @@
         <output id="send-test-status" data-testid="send-test-status" class="gen-status" aria-live="polite"></output>
       </fieldset>
 
-      <div class="mode-switch" role="tablist" aria-label="What to send" data-testid="send-modes">
-        <button type="button" role="tab" id="send-mode-single" data-testid="send-mode-single" aria-selected="true" aria-controls="send-panel-single" class="mode-button active">Single message</button>
-        <button type="button" role="tab" id="send-mode-bulk" data-testid="send-mode-bulk" aria-selected="false" aria-controls="send-panel-bulk" class="mode-button">Bulk send</button>
+      <div class="send-tabbed" data-testid="send-tabbed">
+      <div class="mode-tabs" role="tablist" aria-label="What to send" data-testid="send-modes">
+        <button type="button" role="tab" id="send-mode-single" data-testid="send-mode-single" aria-selected="true" aria-controls="send-panel-single" class="mode-tab active">Single message</button>
+        <button type="button" role="tab" id="send-mode-bulk" data-testid="send-mode-bulk" aria-selected="false" aria-controls="send-panel-bulk" class="mode-tab">Bulk send</button>
       </div>
       <input type="hidden" id="send-mode" data-testid="send-mode" value="single">
 
       <div id="send-panel-single" role="tabpanel" aria-labelledby="send-mode-single" data-testid="send-panel-single" class="send-panel">
-      <fieldset class="card-group" data-testid="send-card-message">
-        <legend data-testid="send-card-message-title">Message</legend>
+      <fieldset class="card-group" data-testid="send-card-message" aria-labelledby="send-mode-single">
         <p class="view-hint" data-testid="send-message-hint">Sends the message that is in the Editor.</p>
         <output id="send-message-summary" data-testid="send-message-summary" class="send-summary"></output>
         <textarea id="send-preview" data-testid="send-preview" class="send-preview" rows="6" readonly spellcheck="false" aria-label="The message that will be sent" hidden></textarea>
@@ -284,8 +284,7 @@
       </div>
 
       <div id="send-panel-bulk" role="tabpanel" aria-labelledby="send-mode-bulk" data-testid="send-panel-bulk" class="send-panel" hidden>
-      <fieldset class="card-group" data-testid="send-card-bulk">
-        <legend data-testid="send-card-bulk-title">Bulk send</legend>
+      <fieldset class="card-group" data-testid="send-card-bulk" aria-labelledby="send-mode-bulk">
         <p class="view-hint" data-testid="send-bulk-hint">Sends the messages generated in the Bulk tab over one connection, one after the other, and waits for each ACK.</p>
         <output id="send-bulk-summary" data-testid="send-bulk-summary" class="send-summary"></output>
         <div class="settings-row" data-testid="send-bulk-options">
@@ -321,6 +320,7 @@
           </table>
         </div>
       </fieldset>
+      </div>
       </div>
     </section>
 

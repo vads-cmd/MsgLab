@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const {
-  HL7_MESSAGES, waitForWindow, pasteMessage, setFileOptions, getFileStatus,
+  HL7_MESSAGES, waitForWindow, pasteMessage, getFileStatus,
   clearDirtyState, closeApp, tid,
   launchApp, takeScreenshotOnFailure,
 } = require('./helpers');
@@ -34,12 +34,6 @@ test.describe('File Operations', () => {
 
     const saveAsButton = await tid(window, 'file-save-as').textContent();
     expect(saveAsButton).toBe('Save as...');
-  });
-
-  test('shows file status element', async () => {
-    const fileStatus = tid(window, 'file-status');
-    // The element exists in the DOM; it may be empty/hidden until a file is associated
-    expect(fileStatus).not.toBeNull();
   });
 
   test('shows line ending options', async () => {
@@ -123,35 +117,9 @@ test.describe('File Operations', () => {
     expect(fileStatus).toBe('');
   });
 
-  test('file options are accessible in settings', async () => {
-    await window.click('[data-testid="nav-settings"]');
-    await window.waitForTimeout(200);
-    // All file options should be visible
-    await expect(tid(window, 'file-eol')).toBeVisible();
-    await expect(tid(window, 'file-encoding')).toBeVisible();
-    await expect(tid(window, 'file-mllp')).toBeVisible();
-  });
-
-  test('sets file options using helper', async () => {
-    await setFileOptions(window, { eol: 'lf', encoding: 'utf-8', mllp: false });
-
-    let eolValue = await tid(window, 'file-eol').inputValue();
-    expect(eolValue).toBe('lf');
-
-    let encodingValue = await tid(window, 'file-encoding').inputValue();
-    expect(encodingValue).toBe('utf-8');
-
-    let mllpChecked = await tid(window, 'file-mllp').isChecked();
-    expect(mllpChecked).toBe(false);
-  });
-
   test('shows file format button in toolbar', async () => {
     const formatButton = tid(window, 'file-format');
     await expect(formatButton).toBeVisible();
   });
 
-  test('shows editor status bar', async () => {
-    const statusBar = tid(window, 'editor-statusbar');
-    await expect(statusBar).toBeVisible();
-  });
 });

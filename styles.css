@@ -1025,23 +1025,40 @@ button.star.on:hover:not(:disabled) {
   align-items: center;
   margin-top: var(--s3);
 }
-/* Single message or bulk: a pill-shaped switch, so it does not look like the tabs on the cards */
-.mode-switch {
-  display: inline-flex;
-  align-self: flex-start;
-  padding: 3px;
-  gap: 3px;
+/* Single message or bulk: tabs on the top edge of the card; the selected tab is joined to the card */
+.send-tabbed { display: block; }
+.mode-tabs {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: var(--s1);
+  margin-bottom: -1px; /* the tabs sit on the card's top border */
+}
+.mode-tab {
+  height: var(--tab-h, 30px);
+  padding: 0 var(--s4);
   border: 1px solid var(--border);
-  border-radius: calc(var(--radius) + 3px);
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--bg);
+  color: var(--muted);
+  font-weight: 600;
+}
+.mode-tab:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  filter: none;
+}
+.mode-tab:active:not(:disabled) { background: var(--bg); }
+.mode-tab.active,
+.mode-tab.active:hover:not(:disabled),
+.mode-tab.active:active:not(:disabled) {
+  border-bottom-color: var(--panel); /* hides the card's top border under this tab */
   background: var(--panel);
+  box-shadow: inset 0 2px 0 var(--accent);
+  color: var(--fg);
 }
-.mode-button { border-color: transparent; background: transparent; }
-.mode-button.active,
-.mode-button.active:hover:not(:disabled) {
-  border-color: transparent;
-  background: var(--accent);
-  color: var(--accent-fg);
-}
+.send-tabbed .card-group { margin-top: 0; border-top-left-radius: 0; }
 .send-panel { display: block; }
 .send-panel[hidden] { display: none; }
 .send-preview {

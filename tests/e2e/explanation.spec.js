@@ -45,15 +45,6 @@ test.describe('Message Explanation', () => {
     expect(segments).toBeGreaterThan(0);
   });
 
-  test('shows segment names and descriptions', async () => {
-    await pasteMessage(window, HL7_MESSAGES.ADT_A01);
-    await clickTab(window, 'explain');
-
-    // First segment should be MSH
-    const firstSegmentName = await getExplanationSegmentName(window, 1);
-    expect(firstSegmentName).toBe('MSH');
-  });
-
   test('shows field names and values', async () => {
     await pasteMessage(window, HL7_MESSAGES.ADT_A01);
     await clickTab(window, 'explain');

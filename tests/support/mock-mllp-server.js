@@ -13,6 +13,7 @@
  *   enhanced     ACK CA                   silent     never answers     close      closes without answering
  *   unframed     answers without framing  garbage    framed, no MSA    split      ACK AA, one byte at a time
  *   mismatch     ACK AA for another message ID    closeAfterReply  ACK AA, then closes the connection
+ *   enhancedError  ACK CE                 enhancedReject  ACK CR
  * mode can also be a function: mode(n) gives the mode for the n-th message received (1, 2, 3 ...).
  * delayMs waits before answering. text sets the MSA-3 text.
  */
@@ -22,7 +23,7 @@ const { FrameReader } = require('../../src/mllp');
 const { parseMessage, get } = require('../../src/hl7/parser');
 const { decodeBuffer } = require('../../src/files');
 
-const ACK_CODE_FOR_MODE = { accept: 'AA', error: 'AE', reject: 'AR', enhanced: 'CA', split: 'AA', mismatch: 'AA', closeAfterReply: 'AA' };
+const ACK_CODE_FOR_MODE = { accept: 'AA', error: 'AE', reject: 'AR', enhanced: 'CA', enhancedError: 'CE', enhancedReject: 'CR', split: 'AA', mismatch: 'AA', closeAfterReply: 'AA' };
 
 function buildAck(messageText, code, text = '', controlId = null) {
   const msg = parseMessage(messageText);
