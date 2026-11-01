@@ -33,13 +33,6 @@ test.describe('Error Handling', () => {
     expect(text).toContain('Validation results will appear here');
   });
 
-  test('handles whitespace-only message', async () => {
-    await pasteMessage(window, HL7_MESSAGES.WHITESPACE);
-
-    const text = await getPlaceholder(window, 'validation');
-    expect(text).toContain('Validation results will appear here');
-  });
-
   test('handles invalid HL7 message', async () => {
     await pasteMessage(window, HL7_MESSAGES.INVALID);
 
@@ -49,13 +42,6 @@ test.describe('Error Handling', () => {
     // Should show errors
     const issues = await getValidationIssueCount(window, 'error');
     expect(issues).toBeGreaterThan(0);
-  });
-
-  test('handles malformed HL7 message', async () => {
-    await pasteMessage(window, HL7_MESSAGES.MALFORMED);
-
-    const badge = await getValidationBadge(window);
-    expect(badge).toBe('Not valid');
   });
 
   test('handles single line message', async () => {

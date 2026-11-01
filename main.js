@@ -18,6 +18,14 @@ const { ABOUT } = require('./src/about');
 // The HL7 logic runs here in the main process; the page asks for it through the preload script.
 const asText = (value) => (typeof value === 'string' ? value : '');
 ipcMain.handle('hl7:validate', (_event, text) => validate(asText(text)));
+// How many errors and warnings each message of a list has (used before a bulk send); one answer per message, in order
+ipcMain.handle('hl7:validateMany', (_event, texts) => {
+  if (!Array.isArray(texts)) return [];
+  return texts.map((text) => {
+    const { counts } = validate(asText(text));
+    return { errors: counts.error, warnings: counts.warning };
+  });
+});
 ipcMain.handle('hl7:explain', (_event, text) => explain(asText(text)));
 
 // Only the listed options are passed on; problems are returned as a message for the page to show.

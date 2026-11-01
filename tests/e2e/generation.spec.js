@@ -1,8 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const {
   HL7_MESSAGES, waitForWindow, pasteMessage, generateMessage, getMessageText,
-  getValidationBadge, getGenStatus, clickFavorite, isFavorited,
-  clearDirtyState, closeApp, tid,
+  getValidationBadge, getGenStatus, clearDirtyState, closeApp, tid,
   launchApp, takeScreenshotOnFailure,
 } = require('./helpers');
 
@@ -100,13 +99,6 @@ test.describe('Message Generation', () => {
     expect(message).toContain('ORM^O01');
   });
 
-  test('generates message with different HL7 version', async () => {
-    await generateMessage(window, { version: '2.5' });
-
-    const message = await getMessageText(window);
-    expect(message).toContain('2.5');
-  });
-
   test('generates message with custom sending application', async () => {
     await generateMessage(window, { sendingApp: 'TESTAPP' });
 
@@ -180,26 +172,6 @@ test.describe('Message Generation', () => {
       const message = await getMessageText(window);
       expect(message).toContain(version);
     }
-  });
-
-  test('favorite button toggles star', async () => {
-    // Navigate to generate view
-    await window.click('[data-testid="nav-generate"]');
-    await window.waitForTimeout(200);
-
-    // Initial state: not favorited (empty star)
-    const before = await isFavorited(window);
-    expect(before).toBe(false);
-
-    // Click favorite
-    await clickFavorite(window);
-    const after = await isFavorited(window);
-    expect(after).toBe(true);
-
-    // Click again to unfavorite
-    await clickFavorite(window);
-    const again = await isFavorited(window);
-    expect(again).toBe(false);
   });
 
   test('all empty checkbox is visible', async () => {

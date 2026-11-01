@@ -5,12 +5,16 @@ const {
   setSendHost, setSendPort, setSendConnectTimeout, setSendReplyTimeout,
   setSendEncoding, clickSendTest, clickSendGo, setSendTestMessage,
   getSendStatus, getSendTestStatus, getSendSummary,
-  isSendResultVisible, getSendAckText, isSendAckVisible, isSendRawVisible,
-  getSendRawVisible, getSendRawHex, getSendWarningCount, getSendWarningText,
+  isSendResultVisible, getSendAckText, getSendRawVisible, getSendRawHex, getSendWarningCount, getSendWarningText,
   isSendGoDisabled, isSendTestDisabled, isSendCancelVisible,
   setProfileName, clickProfileSave, clickProfileDelete,
   getProfileStatus, getSelectedProfile, selectProfile,
-  getSendStatusClass, getSendTestStatusClass, tid,
+  getSendStatusClass, getSendTestStatusClass,
+  setSendMode, getSendMode, isSendModeActive, isSendPanelVisible,
+  isSendPreviewVisible, getSendPreviewText, isSendPreviewReadOnly,
+  getSendValidationText, getSendValidationClass, isSendValidationIssuesVisible,
+  getSendValidationIssueCount, getSendValidationIssueText,
+  tid,
 } = require('./helpers');
 const { startMockServer } = require('../support/mock-mllp-server');
 
@@ -34,34 +38,32 @@ test.describe('Send — UI structure', () => {
     await closeApp(electronApp);
   });
 
-  test('shows Send view title', async () => {
-    expect(await tid(window, 'send-title').textContent()).toBe('Send');
+  test('shows the Server card with its fields and defaults', async () => {
+    await expect.soft(tid(window, 'send-title')).toHaveText('Send');
+    await expect.soft(tid(window, 'send-card-server-title')).toHaveText('Server');
+    await expect.soft(tid(window, 'send-server-hint')).toContainText('MLLP');
+    await expect.soft(tid(window, 'send-host')).toBeVisible();
+    await expect.soft(tid(window, 'send-port')).toHaveValue('2575');
+    await expect.soft(tid(window, 'send-connect-timeout')).toHaveValue('10');
+    await expect.soft(tid(window, 'send-reply-timeout')).toHaveValue('30');
+    await expect.soft(tid(window, 'send-encoding')).toHaveValue('utf-8');
+    await expect.soft(tid(window, 'send-profile')).toHaveValue('');
+    await expect.soft(tid(window, 'send-profile-name')).toBeVisible();
+    await expect.soft(tid(window, 'send-profile-save')).toBeVisible();
+    await expect.soft(tid(window, 'send-profile-delete')).toBeDisabled();
+    await expect.soft(tid(window, 'send-test')).toBeVisible();
+    await expect.soft(tid(window, 'send-test-message')).not.toBeChecked();
   });
 
-  test('shows Server card with legend', async () => {
-    expect(await tid(window, 'send-card-server-title').textContent()).toBe('Server');
-  });
-
-  test('shows Message card with legend', async () => {
-    expect(await tid(window, 'send-card-message-title').textContent()).toBe('Message');
-  });
-
-  test('shows server hint text', async () => {
-    const hint = await tid(window, 'send-server-hint').textContent();
-    expect(hint).toContain('MLLP');
-  });
-
-  test('shows message hint text', async () => {
-    const hint = await tid(window, 'send-message-hint').textContent();
-    expect(hint).toContain('Editor');
-  });
-
-  test('has Test connection button', async () => {
-    await expect(tid(window, 'send-test')).toBeVisible();
-  });
-
-  test('has Send button', async () => {
-    await expect(tid(window, 'send-go')).toBeVisible();
+  test('shows the Message controls, with the result parts not shown yet', async () => {
+    await expect.soft(tid(window, 'send-message-hint')).toContainText('Editor');
+    await expect.soft(tid(window, 'send-go')).toBeVisible();
+    await expect.soft(tid(window, 'send-cancel')).toBeHidden();
+    // the status and result parts are in the page but hidden until something is sent
+    for (const id of ['send-status', 'send-test-status', 'send-result', 'send-ack-details', 'send-raw-details', 'send-copy-ack']) {
+      await expect.soft(tid(window, id)).toBeAttached();
+      await expect.soft(tid(window, id)).toBeHidden();
+    }
   });
 
   test('Send button is disabled with empty editor', async () => {
@@ -86,87 +88,6 @@ test.describe('Send — UI structure', () => {
     expect(summary).toContain('ADT');
   });
 
-  test('has host and port fields', async () => {
-    await expect(tid(window, 'send-host')).toBeVisible();
-    await expect(tid(window, 'send-port')).toBeVisible();
-  });
-
-  test('port defaults to 2575', async () => {
-    expect(await tid(window, 'send-port').inputValue()).toBe('2575');
-  });
-
-  test('has timeout fields', async () => {
-    await expect(tid(window, 'send-connect-timeout')).toBeVisible();
-    await expect(tid(window, 'send-reply-timeout')).toBeVisible();
-  });
-
-  test('connect timeout defaults to 10', async () => {
-    expect(await tid(window, 'send-connect-timeout').inputValue()).toBe('10');
-  });
-
-  test('reply timeout defaults to 30', async () => {
-    expect(await tid(window, 'send-reply-timeout').inputValue()).toBe('30');
-  });
-
-  test('has encoding dropdown', async () => {
-    await expect(tid(window, 'send-encoding')).toBeVisible();
-  });
-
-  test('encoding defaults to UTF-8', async () => {
-    expect(await tid(window, 'send-encoding').inputValue()).toBe('utf-8');
-  });
-
-  test('has profile save and delete buttons', async () => {
-    await expect(tid(window, 'send-profile-save')).toBeVisible();
-    await expect(tid(window, 'send-profile-delete')).toBeVisible();
-  });
-
-  test('delete profile button is disabled initially', async () => {
-    expect(await tid(window, 'send-profile-delete').isDisabled()).toBe(true);
-  });
-
-  test('has profile name field', async () => {
-    await expect(tid(window, 'send-profile-name')).toBeVisible();
-  });
-
-  test('has profile dropdown', async () => {
-    await expect(tid(window, 'send-profile')).toBeVisible();
-  });
-
-  test('profile dropdown shows Not saved initially', async () => {
-    expect(await getSelectedProfile(window)).toBe('');
-  });
-
-  test('Cancel button is hidden initially', async () => {
-    expect(await isSendCancelVisible(window)).toBe(false);
-  });
-
-  test('has Test message checkbox', async () => {
-    await expect(tid(window, 'send-test-message')).toBeVisible();
-  });
-
-  test('Test message checkbox is unchecked by default', async () => {
-    expect(await tid(window, 'send-test-message').isChecked()).toBe(false);
-  });
-
-  test('has status output elements', async () => {
-    // Status outputs are hidden when empty (CSS hides .gen-status with no text)
-    // They exist in the DOM but are not visible until a status message is set
-    expect(await tid(window, 'send-status').count()).toBe(1);
-    expect(await tid(window, 'send-test-status').count()).toBe(1);
-  });
-
-  test('has result section with ACK and raw reply details', async () => {
-    // The result section is hidden until a send completes; details are inside it
-    expect(await tid(window, 'send-result').count()).toBe(1);
-    expect(await tid(window, 'send-ack-details').count()).toBe(1);
-    expect(await tid(window, 'send-raw-details').count()).toBe(1);
-  });
-
-  test('has Copy ACK button', async () => {
-    // Copy ACK is inside the hidden result section; verify it exists
-    expect(await tid(window, 'send-copy-ack').count()).toBe(1);
-  });
 });
 
 test.describe('Send — Test connection', () => {
@@ -211,14 +132,9 @@ test.describe('Send — Test connection', () => {
     expect(cls).toContain('ok');
   });
 
-  test('Test button is disabled during connection', async () => {
-    // The test runs fast, so we check immediately after click
+  test('Test button is enabled again once the test is done', async () => {
     await clickSendTest(window);
-    // Give a tiny window to check the disabled state
-    const disabled = await isSendTestDisabled(window);
-    // It may already be done; if not, it should be disabled
-    // We just verify the button exists and the test completes
-    await window.waitForTimeout(2000);
+    await expect(tid(window, 'send-test-status')).toContainText('accepts connections');
     expect(await isSendTestDisabled(window)).toBe(false);
   });
 
@@ -500,27 +416,17 @@ test.describe('Send — ACK response modes', () => {
     expect(status).toBeTruthy();
   });
 
-  test('handles control ID mismatch warning', async () => {
+  test('shows a control ID mismatch warning', async () => {
     mockServer = await startMockServer({ mode: 'mismatch' });
     await setSendHost(window, mockServer.host);
     await setSendPort(window, mockServer.port);
     await clickSendGo(window);
     await window.waitForTimeout(5000);
 
-    const warningCount = await getSendWarningCount(window);
-    expect(warningCount).toBeGreaterThan(0);
+    expect(await getSendWarningCount(window)).toBeGreaterThan(0);
+    expect(await getSendWarningText(window, 1)).toContain('control ID');
   });
 
-  test('warning text mentions control ID', async () => {
-    mockServer = await startMockServer({ mode: 'mismatch' });
-    await setSendHost(window, mockServer.host);
-    await setSendPort(window, mockServer.port);
-    await clickSendGo(window);
-    await window.waitForTimeout(5000);
-
-    const warning = await getSendWarningText(window, 1);
-    expect(warning).toContain('control ID');
-  });
 });
 
 test.describe('Send — Connection profiles', () => {
@@ -653,20 +559,10 @@ test.describe('Send — Error handling', () => {
     await closeApp(electronApp);
   });
 
-  test('Send button disabled with empty editor', async () => {
-    expect(await isSendGoDisabled(window)).toBe(true);
-  });
-
   test('Send button enabled with non-MSH text', async () => {
     await pasteMessage(window, HL7_MESSAGES.INVALID);
     await goTo(window, 'send');
     // The app allows sending any non-empty text; the server will reject it
-    expect(await isSendGoDisabled(window)).toBe(false);
-  });
-
-  test('Send button enabled with valid message', async () => {
-    await pasteMessage(window, HL7_MESSAGES.ADT_A01);
-    await goTo(window, 'send');
     expect(await isSendGoDisabled(window)).toBe(false);
   });
 
@@ -793,5 +689,211 @@ test.describe('Send — Close server (closes without reply)', () => {
     const status = await getSendStatus(window);
     expect(status).toBeTruthy();
     expect(status).not.toContain('accepted');
+  });
+});
+
+// ---------------------------------------------------------------- Mode switch
+
+test.describe('Send — Mode switch', () => {
+  /** @type {import('@playwright/test').ElectronApplication} */
+  let electronApp;
+  /** @type {import('@playwright/test').Page} */
+  let window;
+
+  test.beforeEach(async () => {
+    electronApp = await launchApp();
+    window = await waitForWindow(electronApp);
+    await clearDirtyState(window);
+    await goTo(window, 'send');
+  });
+
+  test.afterEach(async ({}, testInfo) => {
+    if (testInfo.status !== testInfo.expectedStatus) {
+      await takeScreenshotOnFailure(window, testInfo);
+    }
+    await closeApp(electronApp);
+  });
+
+  test('starts on the Single message tab, and the tabs are marked up as tabs', async () => {
+    await expect.soft(tid(window, 'send-modes')).toBeVisible();
+    await expect.soft(tid(window, 'send-modes')).toHaveAttribute('aria-label', 'What to send');
+    await expect.soft(tid(window, 'send-mode')).toHaveValue('single');
+    for (const [mode, label, active] of [['single', 'Single message', 'true'], ['bulk', 'Bulk send', 'false']]) {
+      const tab = tid(window, `send-mode-${mode}`);
+      await expect.soft(tab).toHaveText(label);
+      await expect.soft(tab).toHaveAttribute('role', 'tab');
+      await expect.soft(tab).toHaveAttribute('aria-selected', active);
+      const panel = tid(window, `send-panel-${mode}`);
+      await expect.soft(panel).toHaveAttribute('role', 'tabpanel');
+      await expect.soft(panel).toHaveAttribute('aria-labelledby', `send-mode-${mode}`);
+    }
+    await expect.soft(tid(window, 'send-panel-single')).toBeVisible();
+    await expect.soft(tid(window, 'send-panel-bulk')).toBeHidden();
+  });
+
+  test('clicking Bulk send tab switches mode', async () => {
+    await setSendMode(window, 'bulk');
+    expect(await isSendModeActive(window, 'bulk')).toBe(true);
+    expect(await isSendModeActive(window, 'single')).toBe(false);
+    expect(await getSendMode(window)).toBe('bulk');
+  });
+
+  test('clicking Single message tab switches back', async () => {
+    await setSendMode(window, 'bulk');
+    await setSendMode(window, 'single');
+    expect(await isSendModeActive(window, 'single')).toBe(true);
+    expect(await getSendMode(window)).toBe('single');
+  });
+
+  test('Bulk panel is visible when Bulk mode is active', async () => {
+    await setSendMode(window, 'bulk');
+    expect(await isSendPanelVisible(window, 'bulk')).toBe(true);
+    expect(await isSendPanelVisible(window, 'single')).toBe(false);
+  });
+
+});
+
+// ---------------------------------------------------------------- Single send preview
+
+test.describe('Send — Single message preview', () => {
+  /** @type {import('@playwright/test').ElectronApplication} */
+  let electronApp;
+  /** @type {import('@playwright/test').Page} */
+  let window;
+
+  test.beforeEach(async () => {
+    electronApp = await launchApp();
+    window = await waitForWindow(electronApp);
+    await clearDirtyState(window);
+    await goTo(window, 'send');
+  });
+
+  test.afterEach(async ({}, testInfo) => {
+    if (testInfo.status !== testInfo.expectedStatus) {
+      await takeScreenshotOnFailure(window, testInfo);
+    }
+    await closeApp(electronApp);
+  });
+
+  test('preview is hidden when editor is empty', async () => {
+    expect(await isSendPreviewVisible(window)).toBe(false);
+  });
+
+  test('preview appears when editor has a message', async () => {
+    await pasteMessage(window, HL7_MESSAGES.ADT_A01);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1000);
+    expect(await isSendPreviewVisible(window)).toBe(true);
+  });
+
+  test('preview shows the editor message content', async () => {
+    await pasteMessage(window, HL7_MESSAGES.ADT_A01);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1000);
+    const preview = await getSendPreviewText(window);
+    expect(preview).toContain('MSH');
+    expect(preview).toContain('ADT');
+  });
+
+  test('preview textarea is read-only', async () => {
+    await pasteMessage(window, HL7_MESSAGES.ADT_A01);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1000);
+    expect(await isSendPreviewReadOnly(window)).not.toBe(null);
+  });
+
+  test('validation summary shows no problems for valid message', async () => {
+    await pasteMessage(window, HL7_MESSAGES.ADT_A01);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1500);
+    const text = await getSendValidationText(window);
+    expect(text).toContain('no problems');
+  });
+
+  test('validation summary has ok class for valid message', async () => {
+    await pasteMessage(window, HL7_MESSAGES.ADT_A01);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1500);
+    const cls = await getSendValidationClass(window);
+    expect(cls).toContain('ok');
+  });
+
+  test('validation issues list is hidden for valid message', async () => {
+    await pasteMessage(window, HL7_MESSAGES.ADT_A01);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1500);
+    expect(await isSendValidationIssuesVisible(window)).toBe(false);
+  });
+
+  test('validation summary shows errors for invalid message', async () => {
+    await pasteMessage(window, HL7_MESSAGES.INVALID);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1500);
+    const text = await getSendValidationText(window);
+    expect(text).toContain('Validation');
+  });
+
+  test('validation summary has error class when errors exist', async () => {
+    await pasteMessage(window, HL7_MESSAGES.INVALID);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1500);
+    const cls = await getSendValidationClass(window);
+    expect(cls).toContain('error');
+  });
+
+  test('validation issues list is visible when there are issues', async () => {
+    await pasteMessage(window, HL7_MESSAGES.INVALID);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1500);
+    expect(await isSendValidationIssuesVisible(window)).toBe(true);
+  });
+
+  test('validation issues show error labels', async () => {
+    await pasteMessage(window, HL7_MESSAGES.INVALID);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1500);
+    const count = await getSendValidationIssueCount(window);
+    expect(count).toBeGreaterThan(0);
+    const first = await getSendValidationIssueText(window, 1);
+    expect(first).toContain('Error');
+  });
+
+  test('validation summary says message can still be sent', async () => {
+    await pasteMessage(window, HL7_MESSAGES.INVALID);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1500);
+    const text = await getSendValidationText(window);
+    expect(text).toContain('can still be sent');
+  });
+
+  test('validation summary shows warning count', async () => {
+    // A message with warnings but no errors
+    const msgWithWarnings = 'MSH|^~\\&|SENDER|FACILITY|RECEIVER|FACILITY|20261023120000||ADT^A01|MSG0001|T|2.5.1\rPID|1';
+    await pasteMessage(window, msgWithWarnings);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1500);
+    const text = await getSendValidationText(window);
+    expect(text).toContain('Validation');
+  });
+
+  test('preview updates when editor content changes', async () => {
+    await pasteMessage(window, HL7_MESSAGES.ADT_A01);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1000);
+    let preview = await getSendPreviewText(window);
+    expect(preview).toContain('ADT');
+
+    // Change the message
+    await goTo(window, 'editor');
+    await tid(window, 'message').fill(HL7_MESSAGES.ORU_R01);
+    await goTo(window, 'send');
+    await window.waitForTimeout(1000);
+    preview = await getSendPreviewText(window);
+    expect(preview).toContain('ORU');
+  });
+
+  test('validation summary is empty when editor is empty', async () => {
+    const text = await getSendValidationText(window);
+    expect(text).toBe('');
   });
 });

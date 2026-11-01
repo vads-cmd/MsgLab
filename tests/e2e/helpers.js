@@ -1159,6 +1159,114 @@ async function isSendBulkCancelVisible(window) {
   return hidden === null;
 }
 
+// ---------------------------------------------------------------- Send mode switch
+
+/**
+ * Switch between Single and Bulk send modes
+ */
+async function setSendMode(window, mode) {
+  await tid(window, `send-mode-${mode}`).click();
+  await window.waitForTimeout(200);
+}
+
+/**
+ * Get the current send mode (single or bulk)
+ */
+async function getSendMode(window) {
+  return tid(window, 'send-mode').inputValue();
+}
+
+/**
+ * Check if a mode button is active
+ */
+async function isSendModeActive(window, mode) {
+  const ariaSelected = await tid(window, `send-mode-${mode}`).getAttribute('aria-selected');
+  return ariaSelected === 'true';
+}
+
+/**
+ * Check if a send panel is visible
+ */
+async function isSendPanelVisible(window, panel) {
+  const hidden = await tid(window, `send-panel-${panel}`).getAttribute('hidden');
+  return hidden === null;
+}
+
+// ---------------------------------------------------------------- Single send preview
+
+/**
+ * Check if the preview textarea is visible
+ */
+async function isSendPreviewVisible(window) {
+  const hidden = await tid(window, 'send-preview').getAttribute('hidden');
+  return hidden === null;
+}
+
+/**
+ * Get the preview textarea content
+ */
+async function getSendPreviewText(window) {
+  return tid(window, 'send-preview').inputValue();
+}
+
+/**
+ * Check if the preview textarea is read-only
+ */
+async function isSendPreviewReadOnly(window) {
+  return tid(window, 'send-preview').getAttribute('readonly');
+}
+
+/**
+ * Get the validation summary text in the Single send panel
+ */
+async function getSendValidationText(window) {
+  return tid(window, 'send-validation').textContent();
+}
+
+/**
+ * Get the validation summary CSS class (ok/error)
+ */
+async function getSendValidationClass(window) {
+  return tid(window, 'send-validation').getAttribute('class');
+}
+
+/**
+ * Check if the validation issues list is visible
+ */
+async function isSendValidationIssuesVisible(window) {
+  const hidden = await tid(window, 'send-validation-issues').getAttribute('hidden');
+  return hidden === null;
+}
+
+/**
+ * Get the number of validation issues shown in the Single send panel
+ */
+async function getSendValidationIssueCount(window) {
+  return window.locator('[data-testid^="send-validation-issue-"]').count();
+}
+
+/**
+ * Get the text of a specific validation issue in the Single send panel
+ */
+async function getSendValidationIssueText(window, index) {
+  return tid(window, `send-validation-issue-${index}`).textContent();
+}
+
+/**
+ * Check if the "and N more" message is shown
+ */
+async function isSendValidationMoreVisible(window) {
+  const hidden = await tid(window, 'send-validation-more').getAttribute('hidden');
+  return hidden === null;
+}
+
+/**
+ * Get the "and N more" text
+ */
+async function getSendValidationMoreText(window) {
+  return tid(window, 'send-validation-more').textContent();
+}
+
 module.exports = {
   HL7_MESSAGES,
   waitForWindow,
@@ -1289,4 +1397,20 @@ module.exports = {
   isSendBulkGoDisabled,
   isSendBulkExportVisible,
   isSendBulkCancelVisible,
+  // Mode switch helpers
+  setSendMode,
+  getSendMode,
+  isSendModeActive,
+  isSendPanelVisible,
+  // Single send preview helpers
+  isSendPreviewVisible,
+  getSendPreviewText,
+  isSendPreviewReadOnly,
+  getSendValidationText,
+  getSendValidationClass,
+  isSendValidationIssuesVisible,
+  getSendValidationIssueCount,
+  getSendValidationIssueText,
+  isSendValidationMoreVisible,
+  getSendValidationMoreText,
 };

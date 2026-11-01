@@ -718,6 +718,12 @@ input:disabled { opacity: 0.55; }
   transform: translateX(14px);
   background: var(--accent-fg);
 }
+
+/* No sliding for people who asked their system for less motion */
+@media (prefers-reduced-motion: reduce) {
+  .switch input,
+  .switch input::after { transition: none; }
+}
 .switch input:indeterminate::after { transform: translateX(7px); }
 .switch input:focus-visible {
   outline: 2px solid var(--accent);
@@ -1019,6 +1025,64 @@ button.star.on:hover:not(:disabled) {
   align-items: center;
   margin-top: var(--s3);
 }
+/* Single message or bulk: tabs on the top edge of the card; the selected tab is joined to the card */
+.send-tabbed { display: block; }
+.mode-tabs {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: var(--s1);
+  margin-bottom: -1px; /* the tabs sit on the card's top border */
+}
+.mode-tab {
+  height: var(--tab-h, 30px);
+  padding: 0 var(--s4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--bg);
+  color: var(--muted);
+  font-weight: 600;
+}
+.mode-tab:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  filter: none;
+}
+.mode-tab:active:not(:disabled) { background: var(--bg); }
+.mode-tab.active,
+.mode-tab.active:hover:not(:disabled),
+.mode-tab.active:active:not(:disabled) {
+  border-bottom-color: var(--panel); /* hides the card's top border under this tab */
+  background: var(--panel);
+  box-shadow: inset 0 2px 0 var(--accent);
+  color: var(--fg);
+}
+.send-tabbed .card-group { margin-top: 0; border-top-left-radius: 0; }
+.send-panel { display: block; }
+.send-panel[hidden] { display: none; }
+.send-preview {
+  display: block;
+  width: 100%;
+  margin: var(--s3) 0 0;
+  padding: var(--s2) var(--s3);
+  max-height: 24em;
+  resize: vertical;
+  overflow: auto;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--field);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+.send-preview[hidden], .send-issues[hidden] { display: none; }
+.send-issues { margin: var(--s1) 0 0; padding-left: var(--s5); font-size: 12px; color: var(--muted); }
+.send-issues li.error { color: var(--danger); }
+.send-summary.error { color: var(--danger); }
+.send-summary.ok { color: var(--ok); }
 .send-summary { display: block; margin-top: var(--s2); font-size: 13px; }
 .send-result { margin-top: var(--s3); display: flex; flex-direction: column; gap: var(--s3); }
 .send-result[hidden], .send-warnings[hidden], .send-result details[hidden] { display: none; }

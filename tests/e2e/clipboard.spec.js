@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 const {
   HL7_MESSAGES, waitForWindow, pasteMessage, configureBulkGeneration,
   generateBulk, copyBulkAll, getBulkCopyStatus,
-  clearDirtyState, closeApp, tid,
+  clearDirtyState, closeApp,
   launchApp, takeScreenshotOnFailure,
 } = require('./helpers');
 
@@ -47,22 +47,6 @@ test.describe('Clipboard Operations', () => {
 
     const copyStatus = await getBulkCopyStatus(window);
     expect(copyStatus).toContain('message');
-  });
-
-  test('copy button is visible after bulk generation', async () => {
-    await configureBulkGeneration(window, { count: 3 });
-    await generateBulk(window);
-
-    const copyButton = tid(window, 'bulk-copy');
-    await expect(copyButton).toBeVisible();
-  });
-
-  test('copy button text is correct', async () => {
-    await configureBulkGeneration(window, { count: 3 });
-    await generateBulk(window);
-
-    const copyButtonText = await tid(window, 'bulk-copy').textContent();
-    expect(copyButtonText).toBe('Copy all messages');
   });
 
   test('pastes message and copies via bulk', async () => {

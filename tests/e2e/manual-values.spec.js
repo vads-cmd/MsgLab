@@ -23,68 +23,18 @@ test.describe('Manual Values', () => {
     await closeApp(electronApp);
   });
 
-  test('shows manual values panel in generate view', async () => {
+  test('shows the manual values panel with all its parts', async () => {
     await goTo(window, 'generate');
-    const manualPanel = tid(window, 'manual');
-    await expect(manualPanel).toBeVisible();
-  });
-
-  test('shows manual values summary', async () => {
-    await goTo(window, 'generate');
-    const summary = tid(window, 'manual-summary');
-    await expect(summary).toBeVisible();
-    expect(await summary.textContent()).toContain('Manual values');
-  });
-
-  test('shows manual values hint text', async () => {
-    await goTo(window, 'generate');
-    const hint = tid(window, 'manual-hint');
-    await expect(hint).toBeVisible();
-    expect(await hint.textContent()).toContain('optional');
-  });
-
-  test('shows manual toolbar', async () => {
-    await goTo(window, 'generate');
-    const toolbar = tid(window, 'manual-toolbar');
-    await expect(toolbar).toBeVisible();
-  });
-
-  test('shows show non-mandatory fields checkbox', async () => {
-    await goTo(window, 'generate');
-    const checkbox = tid(window, 'manual-show-optional');
-    await expect(checkbox).toBeVisible();
-  });
-
-  test('show non-mandatory checkbox label is visible', async () => {
-    await goTo(window, 'generate');
-    const label = tid(window, 'manual-show-optional-label');
-    await expect(label).toBeVisible();
-  });
-
-  test('shows manual fields container', async () => {
-    await goTo(window, 'generate');
-    const fields = tid(window, 'manual-fields');
-    await expect(fields).toBeVisible();
-  });
-
-  test('shows manual clear button', async () => {
-    await goTo(window, 'generate');
-    const clearButton = tid(window, 'manual-clear');
-    await expect(clearButton).toBeVisible();
-    expect(await clearButton.textContent()).toContain('Clear');
-  });
-
-  test('shows manual actions container', async () => {
-    await goTo(window, 'generate');
-    const actions = tid(window, 'manual-actions');
-    await expect(actions).toBeVisible();
-  });
-
-  test('shows hidden fields note element', async () => {
-    await goTo(window, 'generate');
-    const note = tid(window, 'manual-hidden-note');
-    // Element exists in the DOM
-    await expect(note).not.toBeNull();
+    await expect.soft(tid(window, 'manual')).toBeVisible();
+    await expect.soft(tid(window, 'manual-summary')).toContainText('Manual values');
+    await expect.soft(tid(window, 'manual-hint')).toContainText('optional');
+    await expect.soft(tid(window, 'manual-toolbar')).toBeVisible();
+    await expect.soft(tid(window, 'manual-show-optional')).toBeVisible();
+    await expect.soft(tid(window, 'manual-show-optional-label')).toBeVisible();
+    await expect.soft(tid(window, 'manual-fields')).toBeVisible();
+    await expect.soft(tid(window, 'manual-clear')).toContainText('Clear');
+    await expect.soft(tid(window, 'manual-actions')).toBeVisible();
+    await expect.soft(tid(window, 'manual-hidden-note')).toBeAttached();
   });
 
   test('toggling show non-mandatory changes field count', async () => {

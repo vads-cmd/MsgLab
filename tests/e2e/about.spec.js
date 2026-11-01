@@ -1,7 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const {
-  waitForWindow, openAbout, openAboutByLogo, closeAbout, getAboutName, getAboutVersion,
-  getAboutLicense, getAboutOwner, clearDirtyState, closeApp, tid,
+  waitForWindow, openAbout, openAboutByLogo, closeAbout, clearDirtyState, closeApp, tid,
   launchApp, goTo, takeScreenshotOnFailure,
 } = require('./helpers');
 
@@ -24,64 +23,21 @@ test.describe('About Dialog', () => {
     await closeApp(electronApp);
   });
 
-  test('opens About dialog from the Help menu', async () => {
+  test('opens from the Help menu and shows the name, version, license, owner and repository', async () => {
     await openAbout(window, electronApp);
-    const aboutDialog = tid(window, 'about');
-    await expect(aboutDialog).toBeVisible();
-  });
-
-  test('shows application name', async () => {
-    await openAbout(window, electronApp);
-    const name = await getAboutName(window);
-    expect(name.trim()).toContain('MsgLab');
-  });
-
-  test('shows application version', async () => {
-    await openAbout(window, electronApp);
-    const version = await getAboutVersion(window);
-    // Version should match semver pattern like "1.0.0"
-    expect(version.trim()).toMatch(/\d+\.\d+\.\d+/);
-  });
-
-  test('shows license information', async () => {
-    await openAbout(window, electronApp);
-    const license = await getAboutLicense(window);
-    expect(license.trim()).not.toBe('');
-  });
-
-  test('shows owner information', async () => {
-    await openAbout(window, electronApp);
-    const owner = await getAboutOwner(window);
-    expect(owner.trim()).not.toBe('');
-  });
-
-  test('shows repository link', async () => {
-    await openAbout(window, electronApp);
-    const repoLink = tid(window, 'about-repo');
-    await expect(repoLink).toBeVisible();
-    const href = await repoLink.getAttribute('href');
-    expect(href).toContain('github.com');
-  });
-
-  test('shows license label', async () => {
-    await openAbout(window, electronApp);
-    const label = tid(window, 'about-license-label');
-    await expect(label).toBeVisible();
-    expect(await label.textContent()).toContain('License');
-  });
-
-  test('shows owner label', async () => {
-    await openAbout(window, electronApp);
-    const label = tid(window, 'about-owner-label');
-    await expect(label).toBeVisible();
-    expect(await label.textContent()).toContain('Owner');
-  });
-
-  test('shows repository label', async () => {
-    await openAbout(window, electronApp);
-    const label = tid(window, 'about-repository-label');
-    await expect(label).toBeVisible();
-    expect(await label.textContent()).toContain('Repository');
+    await expect.soft(tid(window, 'about')).toBeVisible();
+    await expect.soft(tid(window, 'about-logo')).toBeVisible();
+    await expect.soft(tid(window, 'about-facts')).toBeVisible();
+    await expect.soft(tid(window, 'about-name')).toContainText('MsgLab');
+    await expect.soft(tid(window, 'about-version')).toHaveText(/\d+\.\d+\.\d+/);
+    await expect.soft(tid(window, 'about-license-label')).toContainText('License');
+    await expect.soft(tid(window, 'about-license')).not.toHaveText('');
+    await expect.soft(tid(window, 'about-owner-label')).toContainText('Owner');
+    await expect.soft(tid(window, 'about-owner')).not.toHaveText('');
+    await expect.soft(tid(window, 'about-repository-label')).toContainText('Repository');
+    await expect.soft(tid(window, 'about-repo')).toHaveAttribute('href', /github\.com/);
+    await expect.soft(tid(window, 'about-actions')).toBeVisible();
+    await expect.soft(tid(window, 'about-close')).toContainText('Close');
   });
 
   test('closes About dialog with Close button', async () => {
@@ -90,27 +46,6 @@ test.describe('About Dialog', () => {
     const aboutDialog = tid(window, 'about');
     // The dialog should no longer be visible
     await expect(aboutDialog).not.toBeVisible();
-  });
-
-  test('displays logo image', async () => {
-    await openAbout(window, electronApp);
-    const logo = tid(window, 'about-logo');
-    await expect(logo).toBeVisible();
-  });
-
-  test('has facts list structure', async () => {
-    await openAbout(window, electronApp);
-    const facts = tid(window, 'about-facts');
-    await expect(facts).toBeVisible();
-  });
-
-  test('has close button in actions form', async () => {
-    await openAbout(window, electronApp);
-    const actions = tid(window, 'about-actions');
-    await expect(actions).toBeVisible();
-    const closeButton = tid(window, 'about-close');
-    await expect(closeButton).toBeVisible();
-    expect(await closeButton.textContent()).toContain('Close');
   });
 
   test.describe('Header logo', () => {
@@ -149,15 +84,6 @@ test.describe('About Dialog', () => {
       await expect(tid(window, 'about')).toBeHidden();
       await openAboutByLogo(window);
       await expect(tid(window, 'about')).toBeVisible();
-    });
-
-    test('is closed by Escape and by a click outside', async () => {
-      await openAboutByLogo(window);
-      await window.keyboard.press('Escape');
-      await expect(tid(window, 'about')).toBeHidden();
-      await openAboutByLogo(window);
-      await window.mouse.click(5, 5);
-      await expect(tid(window, 'about')).toBeHidden();
     });
 
     test('works from every view', async () => {

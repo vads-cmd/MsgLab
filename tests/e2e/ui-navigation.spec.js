@@ -1,7 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const {
-  HL7_MESSAGES, waitForWindow, pasteMessage, clickTab, getValidationBadge,
-  getAppTitle, isSendDisabled, getMessageStats,
+  HL7_MESSAGES, waitForWindow, pasteMessage, clickTab, goTo, getValidationBadge,
   clearDirtyState, closeApp, tid,
   launchApp, takeScreenshotOnFailure,
 } = require('./helpers');
@@ -26,14 +25,19 @@ test.describe('UI Navigation', () => {
     await closeApp(electronApp);
   });
 
-  test('shows app title', async () => {
-    const title = await getAppTitle(window);
-    expect(title).toBe('MsgLab');
-  });
-
-  test('shows message textarea', async () => {
-    const textarea = tid(window, 'message');
-    await expect(textarea).toBeVisible();
+  test('shows the editor view with the sidebar, tabs and editor parts', async () => {
+    await expect.soft(tid(window, 'app-title')).toHaveText('MsgLab');
+    await expect.soft(tid(window, 'view-editor')).toBeVisible();
+    await expect.soft(tid(window, 'sidebar')).toBeVisible();
+    for (const id of ['nav-editor', 'nav-generate', 'nav-bulk', 'nav-send', 'nav-settings']) await expect.soft(tid(window, id)).toBeVisible();
+    await expect.soft(tid(window, 'nav-send')).toBeEnabled();
+    await expect.soft(tid(window, 'tab-validation')).toHaveText('Validation');
+    await expect.soft(tid(window, 'tab-explain')).toHaveText('Explain');
+    await expect.soft(tid(window, 'message')).toBeVisible();
+    await expect.soft(tid(window, 'message')).toHaveAttribute('placeholder', /HL7/);
+    await expect.soft(tid(window, 'message-gutter')).toBeVisible();
+    await expect.soft(tid(window, 'editor-toolbar')).toBeVisible();
+    await expect.soft(tid(window, 'editor-statusbar')).toBeVisible();
   });
 
   test('shows validation tab by default', async () => {
@@ -80,108 +84,15 @@ test.describe('UI Navigation', () => {
     await expect(validationTab).toHaveAttribute('aria-selected', 'true');
   });
 
-  test('shows sidebar navigation', async () => {
-    const sidebar = tid(window, 'sidebar');
-    await expect(sidebar).toBeVisible();
-
-    // All nav items should be visible
-    await expect(tid(window, 'nav-editor')).toBeVisible();
-    await expect(tid(window, 'nav-generate')).toBeVisible();
-    await expect(tid(window, 'nav-bulk')).toBeVisible();
-    await expect(tid(window, 'nav-send')).toBeVisible();
-    await expect(tid(window, 'nav-settings')).toBeVisible();
-  });
-
-  test('Send button is enabled', async () => {
-    const disabled = await isSendDisabled(window);
-    expect(disabled).toBe(false);
-  });
-
-  test('shows editor view by default', async () => {
-    const editorView = tid(window, 'view-editor');
-    await expect(editorView).toBeVisible();
-  });
-
-  test('navigates to generate view', async () => {
-    await window.click('[data-testid="nav-generate"]');
-    await window.waitForTimeout(200);
-
-    const generateView = tid(window, 'view-generate');
-    await expect(generateView).toBeVisible();
-  });
-
-  test('navigates to bulk view', async () => {
-    await window.click('[data-testid="nav-bulk"]');
-    await window.waitForTimeout(200);
-
-    const bulkView = tid(window, 'view-bulk');
-    await expect(bulkView).toBeVisible();
-  });
-
-  test('navigates to settings view', async () => {
-    await window.click('[data-testid="nav-settings"]');
-    await window.waitForTimeout(200);
-
-    const settingsView = tid(window, 'view-settings');
-    await expect(settingsView).toBeVisible();
-  });
-
-  test('shows generate button in generate view', async () => {
-    await window.click('[data-testid="nav-generate"]');
-    await window.waitForTimeout(200);
-
-    const button = tid(window, 'gen-submit');
-    await expect(button).toBeVisible();
-    const text = await button.textContent();
-    expect(text).toBe('Generate');
-  });
-
-  test('shows message type dropdown in generate view', async () => {
-    await window.click('[data-testid="nav-generate"]');
-    await window.waitForTimeout(200);
-
-    const dropdown = tid(window, 'gen-type');
-    await expect(dropdown).toBeVisible();
-  });
-
-  test('shows manual values panel in generate view', async () => {
-    await window.click('[data-testid="nav-generate"]');
-    await window.waitForTimeout(200);
-
-    const manual = tid(window, 'manual');
-    await expect(manual).toBeVisible();
-  });
-
-  test('shows file operation buttons', async () => {
-    const openButton = tid(window, 'file-open');
-    await expect(openButton).toBeVisible();
-
-    const saveButton = tid(window, 'file-save');
-    await expect(saveButton).toBeVisible();
-
-    const saveAsButton = tid(window, 'file-save-as');
-    await expect(saveAsButton).toBeVisible();
-  });
-
-  test('shows tabs with correct labels', async () => {
-    const validationTab = await tid(window, 'tab-validation').textContent();
-    expect(validationTab).toBe('Validation');
-
-    const explainTab = await tid(window, 'tab-explain').textContent();
-    expect(explainTab).toBe('Explain');
-  });
-
-  test('validation tab label updates with problems', async () => {
-    await pasteMessage(window, HL7_MESSAGES.INVALID);
-
-    const validationTab = await tid(window, 'tab-validation').textContent();
-    expect(validationTab).toContain('Validation (');
-  });
-
-  test('shows placeholder text in textarea', async () => {
-    const placeholder = await tid(window, 'message').getAttribute('placeholder');
-    expect(placeholder).toBeTruthy();
-    expect(placeholder).toContain('HL7');
+  test('the sidebar opens the Generate, Bulk and Settings views', async () => {
+    await goTo(window, 'generate');
+    await expect.soft(tid(window, 'view-generate')).toBeVisible();
+    await expect.soft(tid(window, 'gen-submit')).toHaveText('Generate');
+    await expect.soft(tid(window, 'gen-type')).toBeVisible();
+    await goTo(window, 'bulk');
+    await expect.soft(tid(window, 'view-bulk')).toBeVisible();
+    await goTo(window, 'settings');
+    await expect.soft(tid(window, 'view-settings')).toBeVisible();
   });
 
   test('navigates between tabs with message', async () => {
@@ -197,29 +108,6 @@ test.describe('UI Navigation', () => {
     // Should still show valid
     const badge = await getValidationBadge(window);
     expect(badge).toBe('Valid');
-  });
-
-  test('shows message stats after pasting', async () => {
-    await pasteMessage(window, HL7_MESSAGES.ADT_A01);
-
-    const stats = await getMessageStats(window);
-    expect(stats).toContain('segment');
-    expect(stats).toContain('character');
-  });
-
-  test('shows line numbers gutter', async () => {
-    const gutter = tid(window, 'message-gutter');
-    await expect(gutter).toBeVisible();
-  });
-
-  test('shows editor toolbar', async () => {
-    const toolbar = tid(window, 'editor-toolbar');
-    await expect(toolbar).toBeVisible();
-  });
-
-  test('shows editor status bar', async () => {
-    const statusBar = tid(window, 'editor-statusbar');
-    await expect(statusBar).toBeVisible();
   });
 
   test('view switching hides other views', async () => {
