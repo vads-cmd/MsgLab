@@ -83,7 +83,12 @@ async function launchApp({ userDataDir } = {}) {
  * Close the Electron app and delete its data folder (unless keepData is set, for a restart).
  */
 async function closeApp(electronApp, { keepData = false } = {}) {
-  const child = electronApp.process();
+  let child;
+  try {
+    child = electronApp.process();
+  } catch {
+    child = null; // the app has quit already (a test that closed it) and Playwright let go of it
+  }
   try {
     // destroy() closes a window without the "unsaved changes" question, which would otherwise
     // block the quit (and the whole app) for as long as nobody answers it
@@ -94,14 +99,14 @@ async function closeApp(electronApp, { keepData = false } = {}) {
   } catch {
     // App may already be closed
   }
-  const running = () => child.exitCode === null;
+  const running = () => child?.exitCode === null;
   if (running()) {
     await Promise.race([
-      new Promise((resolve) => child.once('exit', resolve)),
+      new Promise((resolve) => child?.once('exit', resolve)),
       new Promise((resolve) => setTimeout(resolve, 5000)),
     ]);
     // A window that still does not answer is stopped for good (SIGKILL cannot be ignored)
-    if (running()) child.kill('SIGKILL');
+    if (running()) child?.kill('SIGKILL');
   }
   if (!keepData && electronApp.userDataDir) fs.rmSync(electronApp.userDataDir, { recursive: true, force: true });
 }
@@ -1267,6 +1272,101 @@ async function getSendValidationMoreText(window) {
   return tid(window, 'send-validation-more').textContent();
 }
 
+// ---------------------------------------------------------------- Retry settings
+
+/**
+ * Set the retry count in Settings > Sending
+ */
+async function setRetryCount(window, count) {
+  await tid(window, 'retry-count').fill(String(count));
+  await window.waitForTimeout(200);
+}
+
+/**
+ * Get the current retry count value
+ */
+async function getRetryCount(window) {
+  return Number(await tid(window, 'retry-count').inputValue());
+}
+
+/**
+ * Toggle the retry on NACK checkbox
+ */
+async function setRetryOnNack(window, checked) {
+  if (checked !== (await isRetryOnNackChecked(window))) {
+    await tid(window, 'retry-on-nack').click();
+  }
+}
+
+/**
+ * Check if retry on NACK is checked
+ */
+async function isRetryOnNackChecked(window) {
+  return tid(window, 'retry-on-nack').isChecked();
+}
+
+// ---------------------------------------------------------------- Bulk send from file
+
+/**
+ * Check if the "Load from file..." button is visible
+ */
+async function isSendBulkFileButtonVisible(window) {
+  const hidden = await tid(window, 'send-bulk-file').getAttribute('hidden');
+  return hidden === null;
+}
+
+/**
+ * Check if the "Use the Bulk tab messages" button is visible
+ */
+async function isSendBulkFileClearButtonVisible(window) {
+  const hidden = await tid(window, 'send-bulk-file-clear').getAttribute('hidden');
+  return hidden === null;
+}
+
+/**
+ * Get the file load status text
+ */
+async function getSendBulkFileStatus(window) {
+  return tid(window, 'send-bulk-file-status').textContent();
+}
+
+// ---------------------------------------------------------------- Editor context menu
+
+/**
+ * Right-click the editor. The real menu is a native one that Playwright cannot click, so the app
+ * is told to keep the menu instead of showing it; editorMenuItems() and chooseEditorMenuItem() then
+ * read and use that menu. Call it again for a new right-click.
+ * A real right-click moves the caret and drops a selection; with { keepSelection: true } the
+ * "contextmenu" event is sent to the editor without a click, so the selection stays as it is.
+ */
+async function rightClickEditor(electronApp, window, { keepSelection = false } = {}) {
+  await electronApp.evaluate(({ Menu }) => {
+    globalThis.e2eEditorMenu = null;
+    Menu.prototype.popup = function keepMenu() {
+      globalThis.e2eEditorMenu = this;
+    };
+  });
+  if (keepSelection) await tid(window, 'message').dispatchEvent('contextmenu');
+  else await tid(window, 'message').click({ button: 'right' });
+  await expect.poll(() => electronApp.evaluate(() => globalThis.e2eEditorMenu !== null)).toBe(true);
+}
+
+/** The items of the kept menu as { label, enabled } (separators left out). */
+async function editorMenuItems(electronApp) {
+  return electronApp.evaluate(() => globalThis.e2eEditorMenu.items
+    .filter((item) => item.type !== 'separator')
+    .map((item) => ({ label: item.label, enabled: item.enabled })));
+}
+
+/** Choose an item of the kept menu by its label. */
+async function chooseEditorMenuItem(electronApp, label) {
+  // role items (Select All and so on) act on the web contents they are given, as a click in the real menu does
+  await electronApp.evaluate(({ BrowserWindow }, wanted) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    globalThis.e2eEditorMenu.items.find((item) => item.label === wanted).click({}, win, win.webContents);
+  }, label);
+}
+
 module.exports = {
   HL7_MESSAGES,
   waitForWindow,
@@ -1413,4 +1513,17 @@ module.exports = {
   getSendValidationIssueText,
   isSendValidationMoreVisible,
   getSendValidationMoreText,
+  // Retry settings helpers
+  setRetryCount,
+  getRetryCount,
+  setRetryOnNack,
+  isRetryOnNackChecked,
+  // Bulk send from file helpers
+  isSendBulkFileButtonVisible,
+  isSendBulkFileClearButtonVisible,
+  getSendBulkFileStatus,
+  // Editor context menu helpers
+  rightClickEditor,
+  editorMenuItems,
+  chooseEditorMenuItem,
 };

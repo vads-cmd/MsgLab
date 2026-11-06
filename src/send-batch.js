@@ -7,6 +7,7 @@
 
 const { MllpSession, validateTarget } = require('./mllp');
 const { parseMessage, get } = require('./hl7/parser');
+const { sendWithRetry, cleanRetry, abortableSleep } = require('./retry');
 
 const MAX_MESSAGES = 5000;
 const MAX_TOTAL_CHARS = 100 * 1024 * 1024;
@@ -15,25 +16,6 @@ const DEFAULT_DELAY_SECONDS = 60;
 
 /** Outcomes that say the server cannot be reached at all: going on would only repeat the failure. */
 const CONNECTION_OUTCOMES = new Set(['connect-failed', 'connect-timeout']);
-
-/** Waits; resolves false when the signal stops the wait early, true when the time has passed. */
-function abortableSleep(ms, signal) {
-  return new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve(false);
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(timer);
-      resolve(false);
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve(true);
-    }, ms);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-}
 
 /** One line of the result list: what was sent, and how it went. */
 function describeSend(index, text, result) {
@@ -48,6 +30,7 @@ function describeSend(index, text, result) {
     message: result.message,
     ms: result.totalMs ?? 0,
     reconnected: result.reconnected === true,
+    attempts: result.attempts ?? 1,
     sentAt: new Date().toISOString(),
   };
 }
@@ -62,6 +45,7 @@ function statusFor(record, stopOnError) {
 /**
  * options: messages (array of text), host, port, encoding, connectTimeoutMs, replyTimeoutMs,
  *          delayMs (pause between two messages), stopOnError, signal (AbortSignal),
+ *          retries, retryOnNack, retryPauseMs (see retry.js; a try that is repeated is reported as kind 'retrying'),
  *          onProgress (called after each message and before each pause), sleep (for tests)
  *
  * Always resolves with
@@ -75,6 +59,7 @@ function statusFor(record, stopOnError) {
  */
 async function sendBatch(options) {
   const { messages, delayMs = 0, stopOnError = false, signal, onProgress = () => {}, sleep = abortableSleep } = options;
+  const retry = { retries: options.retries, retryOnNack: options.retryOnNack, pauseMs: options.retryPauseMs, signal, sleep };
   const target = validateTarget(options);
   if (target.error) return { status: 'invalid-settings', message: target.error, total: messages.length, attempted: 0, accepted: 0, failed: 0, reconnects: 0, results: [] };
   const session = new MllpSession(options);
@@ -82,7 +67,10 @@ async function sendBatch(options) {
   let status = 'finished';
   try {
     for (let index = 0; index < messages.length; index += 1) {
-      const result = await session.send(messages[index], { signal });
+      const result = await sendWithRetry(() => session.send(messages[index], { signal }), {
+        ...retry,
+        onRetry: ({ attempt, of, result: last }) => onProgress({ kind: 'retrying', number: index + 1, total: messages.length, attempt, of, reason: last.message }),
+      });
       const record = describeSend(index, messages[index], result);
       results.push(record);
       const accepted = results.filter((item) => item.ok).length;
@@ -149,6 +137,7 @@ function cleanBatchRequest(payload) {
       replyTimeoutMs: timeoutOf(payload.replyTimeoutSeconds),
       delayMs: delayOf(payload.delaySeconds),
       stopOnError: payload.stopOnError === true,
+      ...cleanRetry(payload),
     },
   };
 }

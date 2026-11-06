@@ -49,4 +49,19 @@ function buildMenuTemplate({ send, isMac, appName, devTools }) {
   return template;
 }
 
-module.exports = { FILE_COMMANDS, buildMenuTemplate };
+/**
+ * The right-click menu of the editor, as a template for Menu.buildFromTemplate.
+ * state: { hasSelection, hasText } as the page sees the editor. send(command) gets 'selectLine' or 'duplicateLine'.
+ * The shortcut of Duplicate line is only shown (the page handles the key itself).
+ */
+function buildEditorMenuTemplate({ send, hasSelection = false, hasText = false }) {
+  return [
+    { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+    { role: 'cut', enabled: hasSelection }, { role: 'copy', enabled: hasSelection }, { role: 'paste' }, { type: 'separator' },
+    { label: 'Select line', enabled: hasText, click: () => send('selectLine') },
+    { role: 'selectAll', enabled: hasText },
+    { label: 'Duplicate line', enabled: hasText, accelerator: 'CmdOrCtrl+D', registerAccelerator: false, click: () => send('duplicateLine') },
+  ];
+}
+
+module.exports = { FILE_COMMANDS, buildMenuTemplate, buildEditorMenuTemplate };

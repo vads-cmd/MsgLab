@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('hl7', {
   saveMessage: (payload) => ipcRenderer.invoke('file:save', payload),
   forgetFile: () => ipcRenderer.invoke('file:forget'),
   openFile: () => ipcRenderer.invoke('file:open'),
+  showEditorMenu: (state) => ipcRenderer.invoke('editor:contextMenu', state),
+  readMessagesForSend: () => ipcRenderer.invoke('file:readForSend'),
   openFileData: (payload) => ipcRenderer.invoke('file:openData', payload),
   setDirty: (dirty) => ipcRenderer.invoke('file:setDirty', dirty),
   newMessage: () => ipcRenderer.invoke('file:new'),

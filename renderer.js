@@ -231,6 +231,20 @@ input.addEventListener('keydown', (event) => {
   }
 });
 
+/** Selects the line the caret is in (or all selected lines), with its line break, like a click on its number. */
+function selectLines() {
+  const { selectionStart: start, selectionEnd: end, value } = input;
+  const { lineStart, lineEnd } = selectedLinesRange(value, start, end);
+  input.focus();
+  input.setSelectionRange(lineStart, Math.min(lineEnd + 1, value.length));
+}
+
+// Right-click: the menu is made by the main process (Cut, Copy, Paste and so on need the real thing)
+input.addEventListener('contextmenu', (event) => {
+  event.preventDefault();
+  window.hl7.showEditorMenu({ hasSelection: input.selectionStart !== input.selectionEnd, hasText: input.value !== '' }).catch(console.error);
+});
+
 /** Clicking a line number selects that line, with its line break, so Copy or Delete takes the whole line. */
 gutterInner.addEventListener('click', (event) => {
   const row = event.target.closest('[data-testid^="message-line-"]');
@@ -501,6 +515,12 @@ const bulkStatus = document.getElementById('bulk-status');
 const bulkResult = document.getElementById('bulk-result');
 const SHOWN_ROWS = 200; // the table lists the first rows only; "Copy all" always copies everything
 let bulkMessages = [];
+
+/** Messages loaded from a file for sending; null while the Bulk tab messages are used. */
+let fileMessages = null;
+
+/** The messages the next bulk run sends: the file's when one is loaded, else the Bulk tab's. */
+const messagesToSend = () => fileMessages?.messages ?? bulkMessages;
 
 /* ---- favourite message types ---- */
 
@@ -980,6 +1000,9 @@ const inEditor = (action) => () => {
 };
 const MENU_COMMANDS = {
   about: showAbout,
+  // from the right-click menu of the editor
+  selectLine: async () => { selectLines(); },
+  duplicateLine: async () => { duplicateLines(); },
   new: inEditor(newMessage),
   open: inEditor(openFromDialog),
   save: inEditor(() => saveMessage('save')),
@@ -1101,6 +1124,7 @@ const sendSummary = document.getElementById('send-message-summary');
 const sendResult = document.getElementById('send-result');
 const bulkGo = document.getElementById('send-bulk-go');
 const bulkCancel = document.getElementById('send-bulk-cancel');
+const bulkFileButton = document.getElementById('send-bulk-file');
 let busyKind = 'single'; // what is running: 'single' or 'bulk'
 let sendBusy = false;
 let activeRequestId = null;
@@ -1123,7 +1147,8 @@ function refreshSendButtons() {
   sendGo.disabled = sendBusy || !hasMessage;
   sendTest.disabled = sendBusy;
   sendCancel.hidden = !(sendBusy && busyKind === 'single');
-  bulkGo.disabled = sendBusy || bulkMessages.length === 0;
+  bulkGo.disabled = sendBusy || messagesToSend().length === 0;
+  bulkFileButton.disabled = sendBusy;
   bulkCancel.hidden = !(sendBusy && busyKind === 'bulk');
 }
 
@@ -1261,6 +1286,8 @@ function connectionPayload() {
     connectTimeoutSeconds: fieldValue('send-connect-timeout'),
     replyTimeoutSeconds: fieldValue('send-reply-timeout'),
     encoding: fieldValue('send-encoding'),
+    retries: fieldValue('retry-count'),
+    retryOnNack: document.getElementById('retry-on-nack').checked,
   };
 }
 
@@ -1501,11 +1528,13 @@ function describePace(count, seconds) {
 }
 
 function updateBulkSummary() {
-  const count = bulkMessages.length;
+  const count = messagesToSend().length;
   const verb = count === 1 ? 'is' : 'are';
+  const source = fileMessages ? `from ${fileMessages.name}` : 'from the Bulk tab';
   document.getElementById('send-bulk-summary').textContent = count === 0
-    ? 'There are no messages yet. Generate them in the Bulk tab first.'
-    : `${plural(count, 'message')} from the Bulk tab ${verb} ready to send.`;
+    ? 'There are no messages yet. Generate them in the Bulk tab or load a file.'
+    : `${plural(count, 'message')} ${source} ${verb} ready to send.`;
+  document.getElementById('send-bulk-file-clear').hidden = fileMessages === null;
   const seconds = chosenDelay();
   document.getElementById('send-bulk-estimate').textContent = count === 0 || seconds === null ? '' : describePace(count, seconds);
   document.getElementById('send-delay-custom-label').hidden = fieldValue('send-rate') !== 'custom';
@@ -1554,6 +1583,10 @@ function onSendProgress(progress) {
     bulkProgress.value = progress.done;
     bulkFailing = progress.failed > 0;
     bulkBase = `Sent ${progress.done} of ${progress.total}: ${progress.accepted} accepted, ${progress.failed} not accepted.`;
+    renderBulkStatus();
+  } else if (progress.kind === 'retrying') {
+    stopTicker();
+    bulkBase = `Message ${progress.number} of ${progress.total}: ${progress.reason} Trying again (try ${progress.attempt} of ${progress.of})...`;
     renderBulkStatus();
   } else if (progress.kind === 'waiting') {
     bulkNextAt = progress.nextAt;
@@ -1646,7 +1679,7 @@ async function checkBulkMessages(texts) {
 
 /** Why the bulk run cannot start, or null when it can. */
 function bulkProblem(seconds, host) {
-  if (bulkMessages.length === 0) return 'There are no messages to send.';
+  if (messagesToSend().length === 0) return 'There are no messages to send.';
   if (seconds === null) return `Enter the seconds between messages, from 0 to ${MAX_DELAY_SECONDS}.`;
   if (host === '') return 'Enter the host first.';
   return null;
@@ -1661,7 +1694,7 @@ async function bulkClicked() {
     return;
   }
   const stopOnError = document.getElementById('send-stop-on-error').checked;
-  const texts = bulkMessages.map((message) => message.text);
+  const texts = messagesToSend().map((message) => message.text);
   const checks = await checkBulkMessages(texts);
   if (!(await confirmBulk(texts.length, `${host}:${fieldValue('send-port')}`, seconds, stopOnError, checks))) return;
   await runBulk(texts, seconds, stopOnError);
@@ -1679,6 +1712,27 @@ async function exportBulkReport() {
 bulkExport.addEventListener('click', () => exportBulkReport().catch(console.error));
 
 bulkGo.addEventListener('click', () => bulkClicked().catch(console.error));
+
+const bulkFileStatus = document.getElementById('send-bulk-file-status');
+
+async function loadMessagesFile() {
+  const result = await window.hl7.readMessagesForSend();
+  if (result.canceled) return;
+  if (!result.ok) {
+    showSendLine(bulkFileStatus, result.error, 'error');
+    return;
+  }
+  fileMessages = { name: result.fileName, messages: result.messages };
+  const extra = [...result.notes, ...(result.batch ? ['The batch headers (FHS/BHS) are not sent.'] : [])];
+  showSendLine(bulkFileStatus, `Loaded ${plural(result.messages.length, 'message')} from ${result.fileName}. ${extra.join(' ')}`.trim(), 'ok');
+  updateBulkSummary();
+}
+bulkFileButton.addEventListener('click', () => loadMessagesFile().catch(console.error));
+document.getElementById('send-bulk-file-clear').addEventListener('click', () => {
+  fileMessages = null;
+  showSendLine(bulkFileStatus, '', null);
+  updateBulkSummary();
+});
 bulkCancel.addEventListener('click', () => {
   if (activeRequestId) window.hl7.cancelSend(activeRequestId).catch(console.error);
 });

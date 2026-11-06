@@ -9,10 +9,11 @@ const { generate } = require('./src/hl7/generator');
 const { generateBulk } = require('./src/hl7/bulk');
 const files = require('./src/files');
 const mllp = require('./src/mllp');
-const { sendBatch, cleanBatchRequest } = require('./src/send-batch');
+const { sendBatch, cleanBatchRequest, MAX_MESSAGES } = require('./src/send-batch');
+const { sendWithRetry, cleanRetry } = require('./src/retry');
 const { buildReportCsv, reportFileName, MAX_RECORDS } = require('./src/send-report');
 const settingsStore = require('./src/settings');
-const { buildMenuTemplate } = require('./src/menu');
+const { buildMenuTemplate, buildEditorMenuTemplate } = require('./src/menu');
 const { ABOUT } = require('./src/about');
 
 // The HL7 logic runs here in the main process; the page asks for it through the preload script.
@@ -121,7 +122,11 @@ async function runSend(payload, { needsMessage, action }) {
   }
 }
 
-ipcMain.handle('mllp:send', (_event, payload) => runSend(payload, { needsMessage: true, action: mllp.sendMessage }));
+ipcMain.handle('mllp:send', (_event, payload) => {
+  const retry = cleanRetry(payload);
+  const action = (options) => sendWithRetry(() => mllp.sendMessage(options), { ...retry, signal: options.signal });
+  return runSend(payload, { needsMessage: true, action });
+});
 ipcMain.handle('mllp:test', (_event, payload) => runSend(payload, { needsMessage: false, action: mllp.testConnection }));
 // Bulk sending: one run at a time. Progress goes to the window that asked, after each message and before each pause.
 let batchRunning = false;
@@ -355,6 +360,17 @@ function sendMenuCommand(command) {
   if (win) win.webContents.send('menu:command', command);
 }
 
+// The right-click menu of the editor: the page says where the caret is (selection, text), the commands go back to it.
+ipcMain.handle('editor:contextMenu', (event, state) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return;
+  const send = (command) => {
+    if (!event.sender.isDestroyed()) event.sender.send('menu:command', command);
+  };
+  const template = buildEditorMenuTemplate({ send, hasSelection: state?.hasSelection === true, hasText: state?.hasText === true });
+  Menu.buildFromTemplate(template).popup({ window: win });
+});
+
 function setUpMenu() {
   const template = buildMenuTemplate({ send: sendMenuCommand, isMac: process.platform === 'darwin', appName: app.name, devTools: !app.isPackaged });
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -392,6 +408,29 @@ ipcMain.handle('file:open', (event) => openFor(event, async (win) => {
   rememberFolder(path.dirname(file));
   return { path: file, fileName: path.basename(file), read };
 }));
+
+// Messages for bulk sending, read from a file. Unlike Open this does not touch the editor: no changes are
+// discarded, the file is not tied to the window and the editor keeps what it holds.
+ipcMain.handle('file:readForSend', async (event) => {
+  try {
+    const chosen = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+      title: 'Messages to send',
+      defaultPath: lastFolder ?? app.getPath('documents'),
+      properties: ['openFile'],
+      filters: OPEN_FILTERS,
+    });
+    if (chosen.canceled || chosen.filePaths.length === 0) return { ok: false, canceled: true };
+    const file = chosen.filePaths[0];
+    const read = files.readMessages(await files.readFile(file));
+    if (read.messages.length > MAX_MESSAGES) {
+      return { ok: false, error: `The file has ${read.messages.length} messages; at most ${MAX_MESSAGES} can be sent in one run.` };
+    }
+    rememberFolder(path.dirname(file));
+    return { ok: true, fileName: path.basename(file), messages: read.messages.map((message) => ({ text: message.text, type: message.type, controlId: message.controlId })), notes: read.notes, batch: read.batch };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 
 ipcMain.handle('file:openData', (event, payload) => openFor(event, async () => {
   const p = payload && typeof payload === 'object' ? payload : {};
