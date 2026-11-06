@@ -16,6 +16,7 @@
  *   enhancedError  ACK CE                 enhancedReject  ACK CR
  * mode can also be a function: mode(n) gives the mode for the n-th message received (1, 2, 3 ...).
  * delayMs waits before answering. text sets the MSA-3 text.
+ * onMessage({ number, text, mode }) is called for every message that arrives (scripts/mllp-check.js prints a line).
  */
 
 const net = require('node:net');
@@ -52,7 +53,7 @@ function writeSlowly(socket, bytes, index = 0) {
 }
 
 /** What the server does with one connection: read frames, answer each one the way the mode says. */
-function handleConnection(socket, { mode, delayMs, text }, received) {
+function handleConnection(socket, { mode, delayMs, text, onMessage }, received) {
   const reader = new FrameReader();
   socket.on('error', () => {});
   socket.on('data', (chunk) => {
@@ -60,6 +61,7 @@ function handleConnection(socket, { mode, delayMs, text }, received) {
       const messageText = decodeBuffer(payload).text;
       received.push({ text: messageText, bytes: Buffer.from(payload) });
       const current = typeof mode === 'function' ? mode(received.length) : mode;
+      onMessage?.({ number: received.length, text: messageText, mode: current });
       if (current !== 'silent') setTimeout(() => answer(socket, current, messageText, text), delayMs);
     }
   });
@@ -72,7 +74,7 @@ function answer(socket, mode, messageText, text) {
   else socket.write(replyFor(mode, messageText, text));
 }
 
-function startMockServer({ mode = 'accept', delayMs = 0, text = '' } = {}) {
+function startMockServer({ mode = 'accept', delayMs = 0, text = '', host = '127.0.0.1', port = 0, onMessage } = {}) {
   const received = [];
   const sockets = new Set();
   let connections = 0;
@@ -81,7 +83,7 @@ function startMockServer({ mode = 'accept', delayMs = 0, text = '' } = {}) {
     connections += 1;
     sockets.add(socket);
     socket.on('close', () => sockets.delete(socket));
-    handleConnection(socket, { mode, delayMs, text }, received);
+    handleConnection(socket, { mode, delayMs, text, onMessage }, received);
   });
 
   const closeAll = () => new Promise((done) => {
@@ -91,9 +93,9 @@ function startMockServer({ mode = 'accept', delayMs = 0, text = '' } = {}) {
 
   return new Promise((resolve, reject) => {
     server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(port, host, () => {
       resolve({
-        host: '127.0.0.1',
+        host,
         port: server.address().port,
         received,
         get connections() { return connections; },

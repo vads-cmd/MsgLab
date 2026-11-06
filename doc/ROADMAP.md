@@ -25,8 +25,9 @@ Version numbers are X.Y.Z. A big feature raises Y (0.3.0, 0.4.0, ...). Smaller s
   - Warning before sending when a message has validation errors (warn only, never block).
 - **0.2.3, more control over sending**
   - Bulk send from a file (`.hl7` / `.txt`, with or without FHS/BHS).
-  - Retry amount in Settings: how many times a send is tried again after a connection failure or a timeout. A message the server answered (AE/AR) is never retried.
+  - Retry amount in Settings: how many times a send is tried again after a connection failure or a timeout. By default a message the server answered (AE/AR) is never retried; a checkbox in Settings turns on retrying after AE/AR too. The checkbox is off by default and has a short warning next to it: retrying a message the server refused can create duplicates there.
   - `scripts/mllp-check.js`: terminal tool with a local test server (for example `serve --error-every 5`).
+  - Editor: right-click menu with select line, select all and duplicate line (and the usual cut, copy and paste).
 
 ## 0.3.0 - history of sent messages
 

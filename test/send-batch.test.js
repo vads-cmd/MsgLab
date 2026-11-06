@@ -228,7 +228,7 @@ const REQUEST = { requestId: 'req-1', host: 'srv', port: '2575', messages: ['MSH
 test('a request from the window is turned into options, with seconds as milliseconds', () => {
   assert.deepStrictEqual(cleanBatchRequest(REQUEST), {
     requestId: 'req-1',
-    options: { messages: ['MSH|a', 'MSH|b'], host: 'srv', port: '2575', encoding: 'windows-1252', connectTimeoutMs: 5000, replyTimeoutMs: 20000, delayMs: 60000, stopOnError: true },
+    options: { messages: ['MSH|a', 'MSH|b'], host: 'srv', port: '2575', encoding: 'windows-1252', connectTimeoutMs: 5000, replyTimeoutMs: 20000, delayMs: 60000, stopOnError: true, retries: 0, retryOnNack: false },
   });
 });
 
@@ -263,4 +263,43 @@ test('host and port of the wrong type do not get through', () => {
   const { options } = cleanBatchRequest({ ...REQUEST, host: { x: 1 }, port: { y: 2 } });
   assert.strictEqual(options.host, '');
   assert.strictEqual(options.port, '');
+});
+
+test('the retry settings of a request are cleaned: whole tries from 0 to 5, and retryOnNack only when true', () => {
+  const options = (extra) => cleanBatchRequest({ ...REQUEST, ...extra }).options;
+  assert.deepStrictEqual([options({ retries: '3' }).retries, options({ retries: 2 }).retries, options({ retries: 99 }).retries], [3, 2, 5]);
+  for (const bad of ['', 'x', -4, 1.5, null, undefined]) assert.strictEqual(options({ retries: bad }).retries, 0, String(bad));
+  assert.strictEqual(options({ retryOnNack: true }).retryOnNack, true);
+  assert.strictEqual(options({ retryOnNack: 'yes' }).retryOnNack, false);
+});
+
+test('a message that gets no answer is tried again, and the record says how many tries it took', async () => {
+  // the first two messages that arrive get no answer, then the server answers
+  await withServer({ mode: (n) => (n <= 2 ? 'silent' : 'accept') }, async (server) => {
+    const kinds = [];
+    const summary = await run(server, messages(1), {
+      replyTimeoutMs: 100, retries: 3, retryPauseMs: 1, onProgress: (progress) => kinds.push(progress.kind),
+    });
+    assert.strictEqual(summary.status, 'finished');
+    assert.strictEqual(summary.accepted, 1);
+    assert.strictEqual(summary.results[0].attempts, 3);
+    assert.match(summary.results[0].message, /\(tried 3 times\)$/);
+    assert.deepStrictEqual(kinds, ['retrying', 'retrying', 'sent']);
+    assert.strictEqual(server.received.length, 3);
+  });
+});
+
+test('a refused message (AE) is not tried again unless retryOnNack is set', async () => {
+  await withServer({ mode: (n) => (n === 1 ? 'error' : 'accept') }, async (server) => {
+    const summary = await run(server, messages(1), { retries: 2, retryPauseMs: 1 });
+    assert.strictEqual(summary.results[0].outcome, 'application-error');
+    assert.strictEqual(summary.results[0].attempts, 1);
+    assert.strictEqual(server.received.length, 1);
+  });
+  await withServer({ mode: (n) => (n === 1 ? 'error' : 'accept') }, async (server) => {
+    const summary = await run(server, messages(1), { retries: 2, retryPauseMs: 1, retryOnNack: true });
+    assert.strictEqual(summary.accepted, 1);
+    assert.strictEqual(summary.results[0].attempts, 2);
+    assert.strictEqual(server.received.length, 2);
+  });
 });

@@ -285,8 +285,13 @@
 
       <div id="send-panel-bulk" role="tabpanel" aria-labelledby="send-mode-bulk" data-testid="send-panel-bulk" class="send-panel" hidden>
       <fieldset class="card-group" data-testid="send-card-bulk" aria-labelledby="send-mode-bulk">
-        <p class="view-hint" data-testid="send-bulk-hint">Sends the messages generated in the Bulk tab over one connection, one after the other, and waits for each ACK.</p>
+        <p class="view-hint" data-testid="send-bulk-hint">Sends the messages generated in the Bulk tab, or the messages of a file (.hl7 or .txt, with or without FHS/BHS headers), over one connection, one after the other, and waits for each ACK.</p>
         <output id="send-bulk-summary" data-testid="send-bulk-summary" class="send-summary"></output>
+        <div class="send-actions" data-testid="send-bulk-source-actions">
+          <button type="button" id="send-bulk-file" data-testid="send-bulk-file">Load from file...</button>
+          <button type="button" id="send-bulk-file-clear" data-testid="send-bulk-file-clear" class="quiet" hidden>Use the Bulk tab messages</button>
+        </div>
+        <output id="send-bulk-file-status" data-testid="send-bulk-file-status" class="gen-status" aria-live="polite"></output>
         <div class="settings-row" data-testid="send-bulk-options">
           <label data-testid="send-rate-label">Pace
             <select id="send-rate" data-testid="send-rate">
@@ -358,6 +363,18 @@
           </label>
           <label class="file-check" data-testid="file-mllp-label"><input type="checkbox" id="file-mllp" data-testid="file-mllp"> Wrap in MLLP</label>
         </div>
+      </fieldset>
+
+      <fieldset class="card-group" data-testid="settings-card-sending">
+        <legend data-testid="settings-card-sending-title">Sending</legend>
+        <p class="view-hint" data-testid="settings-sending-hint">What happens when the server does not answer: the connection fails, no ACK arrives within the timeout, or the server hangs up. Applies to single and bulk sending.</p>
+        <div class="settings-row" data-testid="settings-sending-row">
+          <label data-testid="retry-count-label">Tries again
+            <input type="number" id="retry-count" data-testid="retry-count" min="0" max="5" step="1" value="0" inputmode="numeric">
+          </label>
+          <label class="file-check" data-testid="retry-on-nack-label"><input type="checkbox" id="retry-on-nack" data-testid="retry-on-nack"> Also try again after AE or AR</label>
+        </div>
+        <p class="view-hint" data-testid="retry-hint">0 means a message is sent once. Waits 2 seconds between tries. A try after a timeout or a hang-up can create a duplicate if the server had received the message but answered late. A message the server refused (AE or AR) is not repeated unless the box is checked: the server may already have stored it.</p>
       </fieldset>
 
       <fieldset class="card-group" data-testid="settings-card-folders">

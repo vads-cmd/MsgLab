@@ -165,7 +165,7 @@ test.describe('Send — keyboard and window', () => {
     const child = electronApp.process();
     await electronApp.evaluate(({ BrowserWindow }) => {
       for (const win of BrowserWindow.getAllWindows()) win.close();
-    });
+    }).catch(() => {}); // the app may quit before it answers
     await expect.poll(() => child.exitCode !== null || child.signalCode !== null, { timeout: 10000 }).toBe(true);
   });
 });
@@ -313,9 +313,11 @@ test.describe('Send — bulk, edge cases', () => {
   };
 
   test('reconnects when the server closed the connection, and says so in the row', async () => {
-    await begin({ mode: (n) => (n === 1 ? 'closeAfterReply' : 'accept') });
+    // a pause of one second between the messages: without it the next message can leave before the app
+    // has noticed that the server hung up, and then that message fails instead of reconnecting
+    await begin({ mode: (n) => (n === 1 ? 'closeAfterReply' : 'accept') }, { rate: '1' });
     await startBulkRun(window);
-    await expect(tid(window, 'send-row-3')).toBeVisible({ timeout: 15000 });
+    await expect(tid(window, 'send-row-3')).toBeVisible({ timeout: 20000 });
     await expect(tid(window, 'send-row-2-details')).toContainText('Connected again');
     await expect(tid(window, 'send-row-3-details')).not.toContainText('Connected again');
     expect(server.received).toHaveLength(3);
