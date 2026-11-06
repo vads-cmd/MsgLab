@@ -48,8 +48,11 @@ function replyFor(mode, messageText, text) {
 /** One byte every 2 ms, so the client has to put a frame together from many pieces. */
 function writeSlowly(socket, bytes, index = 0) {
   if (index >= bytes.length || socket.destroyed) return;
+  if (index === 0) socket.setNoDelay(true);
   socket.write(Buffer.from([bytes[index]]));
-  setTimeout(() => writeSlowly(socket, bytes, index + 1), 2);
+  // setImmediate and not a timer: on Windows a timer of 2 ms lasts about 15 ms, which made a whole ACK
+  // take longer than the reply timeout of the tests
+  setImmediate(() => writeSlowly(socket, bytes, index + 1));
 }
 
 /** What the server does with one connection: read frames, answer each one the way the mode says. */
